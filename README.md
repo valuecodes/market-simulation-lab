@@ -58,11 +58,29 @@ sidebar — the bundled **Stocks + Cash (1954+)** dataset (S&P 500 alongside a
 cash account that compounds the federal funds rate, from `data/`), the
 full-history **S&P 500 (daily)** series, or your own uploaded wide-format CSV —
 then set the allocation weights, choose a rebalancing cadence, and run a
-simulation. (The `data/` files are git-ignored and provided locally.)
+simulation.
+
+> **Data files are not committed.** The `data/` directory is git-ignored, so a
+> fresh clone has no bundled datasets: the **Stocks + Cash** and **S&P 500**
+> options will report a missing file until you place the CSVs in `data/`
+> (`sp500daily.csv` and `fed-funds-rate.csv`). The **Upload CSV** option works
+> without any local data. Uploads are validated and size-bounded (10 MiB /
+> 200k rows / 100 columns) before processing.
 
 > **Note on "Cash (Fed Funds)":** the federal funds rate is a short-term
 > overnight rate. Compounding it models a risk-free cash / money-market account,
 > **not** long-term bonds — it has no duration or price risk.
+
+### Deploying to the public internet
+
+This tool is designed to run **locally**. Before exposing the Streamlit app to
+arbitrary internet users, harden the deployment:
+
+- Uploads are already validated and size-bounded in code, and `maxUploadSize`
+  is capped in `.streamlit/config.toml` — keep both in place.
+- Put the app behind authentication and/or a reverse proxy with rate limiting.
+- Set resource limits (CPU/memory) on the container or host.
+- Do not commit real market data you are not licensed to redistribute.
 
 ## Using your own data
 

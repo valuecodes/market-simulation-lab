@@ -9,12 +9,21 @@ series and converts them into cash-account growth indices (see
 
 from __future__ import annotations
 
-from io import StringIO
+from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 DATE_COLUMN = "date"
+
+# Guardrails for *untrusted* CSV input (uploads). The local-file loaders are
+# considered trusted and are not subject to these size bounds; the data-integrity
+# checks in ``_prepare_price_frame`` apply to all sources.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB
+MAX_UPLOAD_ROWS = 200_000
+MAX_UPLOAD_COLUMNS = 100
+MAX_SYMBOL_LENGTH = 64
 
 # Median spacing (in days) between observations -> periods per year, used to
 # annualise metrics. Anything sparser than quarterly is treated as annual.
@@ -53,13 +62,25 @@ def load_price_data(path: str | Path, *, date_column: str | None = None) -> pd.D
     return _prepare_price_frame(frame, date_column)
 
 
-def parse_price_csv(text: str, *, date_column: str | None = None) -> pd.DataFrame:
-    """Parse wide-format price CSV text (e.g. from a file upload).
+def parse_price_csv(data: str | bytes, *, date_column: str | None = None) -> pd.DataFrame:
+    """Parse wide-format price CSV text or bytes (e.g. from a file upload).
 
-    Applies the same cleaning rules as :func:`load_price_data`.
+    Applies the same cleaning rules as :func:`load_price_data`, plus size
+    guardrails suitable for *untrusted* input: the payload, row count, column
+    count and asset-name length are all bounded to prevent a huge or malicious
+    upload from exhausting memory. Raises :class:`ValueError` if a limit is hit.
     """
-    frame = pd.read_csv(StringIO(text))
-    return _prepare_price_frame(frame, date_column)
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB size limit")
+
+    # nrows caps parsing work even before the row-count check below.
+    frame = pd.read_csv(BytesIO(raw), encoding="utf-8-sig", nrows=MAX_UPLOAD_ROWS + 1)
+    if len(frame) > MAX_UPLOAD_ROWS:
+        raise ValueError(f"upload exceeds the {MAX_UPLOAD_ROWS} row limit")
+    if frame.shape[1] > MAX_UPLOAD_COLUMNS:
+        raise ValueError(f"upload exceeds the {MAX_UPLOAD_COLUMNS} column limit")
+    return _prepare_price_frame(frame, date_column, max_symbol_length=MAX_SYMBOL_LENGTH)
 
 
 def load_rate_series(path: str | Path, *, rate_column: str | None = None) -> pd.Series:
@@ -152,22 +173,43 @@ def infer_periods_per_year(index: pd.DatetimeIndex) -> int:
     return _DEFAULT_PERIODS_PER_YEAR
 
 
-def _prepare_price_frame(frame: pd.DataFrame, date_column: str | None) -> pd.DataFrame:
+def _prepare_price_frame(
+    frame: pd.DataFrame,
+    date_column: str | None,
+    *,
+    max_symbol_length: int | None = None,
+) -> pd.DataFrame:
     frame = frame.copy()
     frame.columns = [str(c).strip() for c in frame.columns]
     resolved = _resolve_date_column(frame, date_column)
 
+    asset_columns = [c for c in frame.columns if c != resolved]
+    if not asset_columns:
+        raise ValueError("price data has no asset columns")
+    duplicates = sorted({c for c in asset_columns if asset_columns.count(c) > 1})
+    if duplicates:
+        raise ValueError(f"price data has duplicate asset columns: {duplicates}")
+    if max_symbol_length is not None:
+        too_long = [c for c in asset_columns if len(c) > max_symbol_length]
+        if too_long:
+            raise ValueError(f"asset name exceeds {max_symbol_length} characters: {too_long[:3]}")
+
     frame[resolved] = pd.to_datetime(frame[resolved])
     frame = frame.set_index(resolved).sort_index()
     frame.index.name = DATE_COLUMN
-
-    if frame.shape[1] == 0:
-        raise ValueError("price data has no asset columns")
+    if frame.index.has_duplicates:
+        raise ValueError("price data has duplicate dates")
 
     frame = frame.astype(float)
     frame = frame.ffill().dropna(how="any")
-    if frame.empty:
-        raise ValueError("price data is empty after cleaning")
+    if len(frame) < 2:
+        raise ValueError("price data needs at least two dated observations after cleaning")
+
+    values = frame.to_numpy()
+    if not np.isfinite(values).all():
+        raise ValueError("price data contains non-finite values (NaN or infinity)")
+    if (values <= 0).any():
+        raise ValueError("price data must be strictly positive (no zero or negative prices)")
     return frame
 
 

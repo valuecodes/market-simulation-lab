@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from pydantic import ValidationError
 
@@ -19,8 +21,21 @@ def test_weights_must_sum_to_one():
         StrategyConfig(allocations={"A": 0.6, "B": 0.6})
 
 
+@pytest.mark.parametrize("bad", [math.nan, math.inf])
+def test_non_finite_weight_rejected(bad):
+    # NaN/inf must not slip past the positive-weight and sum checks.
+    with pytest.raises(ValidationError, match="positive number"):
+        StrategyConfig(allocations={"A": bad})
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf])
+def test_non_finite_initial_capital_rejected(bad):
+    with pytest.raises(ValidationError):
+        StrategyConfig(allocations={"A": 1.0}, initial_capital=bad)
+
+
 def test_negative_weight_rejected():
-    with pytest.raises(ValidationError, match="must be positive"):
+    with pytest.raises(ValidationError, match="must be a positive number"):
         StrategyConfig(allocations={"A": 1.2, "B": -0.2})
 
 

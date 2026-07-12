@@ -13,7 +13,6 @@ Run it with::
 from __future__ import annotations
 
 import sys
-from io import StringIO
 from pathlib import Path
 
 # Allow running directly (`streamlit run app/Home.py`) without installing the
@@ -30,6 +29,7 @@ import streamlit as st  # noqa: E402
 from portfolio_research_lab.data import (  # noqa: E402
     load_price_data,
     load_rate_series,
+    parse_price_csv,
     rate_to_index,
 )
 from portfolio_research_lab.models import StrategyConfig  # noqa: E402
@@ -70,19 +70,9 @@ def _load_stocks_cash() -> pd.DataFrame:
 
 
 def _load_uploaded(file) -> pd.DataFrame:
-    text = file.getvalue().decode("utf-8")
-    return load_price_data_from_text(text)
-
-
-def load_price_data_from_text(text: str) -> pd.DataFrame:
-    # Reuse the loader's cleaning rules by writing to an in-memory buffer.
-    from portfolio_research_lab.data import DATE_COLUMN
-
-    frame = pd.read_csv(StringIO(text))
-    if DATE_COLUMN not in frame.columns:
-        raise ValueError(f"expected a {DATE_COLUMN!r} column")
-    frame[DATE_COLUMN] = pd.to_datetime(frame[DATE_COLUMN])
-    return frame.set_index(DATE_COLUMN).sort_index().astype(float).ffill().dropna(how="any")
+    # Parse the upload bytes directly through the engine's bounded, validating
+    # parser (size / row / column / symbol-length limits + data-integrity checks).
+    return parse_price_csv(file.getvalue())
 
 
 def _metrics_row(label: str, m: dict[str, float]) -> dict[str, str]:
@@ -124,7 +114,12 @@ def main() -> None:
                 st.info("Upload a CSV, or switch to a bundled dataset, to begin.")
                 st.stop()
             prices = _load_uploaded(upload)
-    except (ValueError, FileNotFoundError) as exc:
+    except (
+        ValueError,  # also covers UnicodeDecodeError and pandas ParserError/EmptyDataError
+        FileNotFoundError,
+        KeyError,
+        pd.errors.ParserError,
+    ) as exc:
         st.error(f"Could not load price data: {exc}")
         st.stop()
 

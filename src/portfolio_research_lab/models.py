@@ -7,6 +7,7 @@ validated, serialised to JSON and shared without touching the engine.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -47,7 +48,7 @@ class StrategyConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str = Field(default="Buy & Hold", min_length=1)
-    initial_capital: float = Field(default=10_000.0, gt=0)
+    initial_capital: float = Field(default=10_000.0, gt=0, allow_inf_nan=False)
     allocations: dict[str, float] = Field(min_length=1)
     benchmark: str | None = None
     trading_days_per_year: int = Field(default=252, gt=0)
@@ -67,8 +68,10 @@ class StrategyConfig(BaseModel):
     @classmethod
     def _weights_must_be_positive(cls, value: dict[str, float]) -> dict[str, float]:
         for symbol, weight in value.items():
-            if weight <= 0:
-                raise ValueError(f"weight for {symbol!r} must be positive, got {weight}")
+            # NaN slips past ``weight <= 0`` (all NaN comparisons are False) and
+            # would then bypass the sum check too, so reject non-finite explicitly.
+            if not math.isfinite(weight) or weight <= 0:
+                raise ValueError(f"weight for {symbol!r} must be a positive number, got {weight}")
         return value
 
     @model_validator(mode="after")

@@ -2,3 +2,7 @@
 # Don't try to auto-open a browser (avoids a harmless "gio: Operation not
 # supported" error under WSL, where there's no desktop URL handler).
 headless = true
+
+# Cap uploads at the transport layer (MB). Mirrors MAX_UPLOAD_BYTES in
+# portfolio_research_lab.data, which enforces the same bound in application code.
+maxUploadSize = 10
