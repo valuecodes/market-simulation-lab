@@ -18,6 +18,7 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "ruff>=0.5",
+    "poethepoet>=0.27",
 ]
 
 [build-system]
@@ -29,6 +30,13 @@ packages = ["src/portfolio_research_lab"]
 
 [tool.uv]
 # Development dependencies installed with `uv sync --extra dev`.
+
+[tool.poe.tasks]
+dev = { cmd = "streamlit run app/Home.py", help = "Run the Streamlit app" }
+lint = { cmd = "ruff check .", help = "Lint with ruff" }
+fmt = { cmd = "ruff format .", help = "Format with ruff" }
+test = { cmd = "pytest", help = "Run the test suite" }
+check = { sequence = ["lint", "test"], help = "Lint + run tests" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

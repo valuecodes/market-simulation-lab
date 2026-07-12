@@ -50,7 +50,7 @@ development dependencies pinned in `pyproject.toml`.
 ## Running the app
 
 ```bash
-uv run streamlit run app/Home.py
+uv run poe dev   # or: uv run streamlit run app/Home.py
 ```
 
 Streamlit opens the interface in your browser. Pick a data source in the
@@ -102,11 +102,18 @@ print(result.metrics())
 
 ## Testing, linting and formatting
 
+Common tasks are defined as [poe](https://poethepoet.natn.io/) tasks in
+`pyproject.toml`. Run `uv run poe` to list them:
+
 ```bash
-uv run pytest            # run the test suite
-uv run ruff check .      # lint
-uv run ruff format .     # format
+uv run poe test          # run the test suite
+uv run poe lint          # lint
+uv run poe fmt           # format
+uv run poe check         # lint + test
 ```
+
+These are thin wrappers — the equivalent raw commands still work
+(`uv run pytest`, `uv run ruff check .`, `uv run ruff format .`).
 
 ## Project structure
 

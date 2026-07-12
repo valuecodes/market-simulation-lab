@@ -1,0 +1,4 @@
+[server]
+# Don't try to auto-open a browser (avoids a harmless "gio: Operation not
+# supported" error under WSL, where there's no desktop URL handler).
+headless = true
