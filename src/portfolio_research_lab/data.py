@@ -134,8 +134,7 @@ def rate_to_index(
     days = rate.index.to_series().diff().dt.days
     factor = 1.0 + rate.shift(1) / 100.0 * days / days_per_year
     factor.iloc[0] = 1.0  # first point: no prior period to accrue over
-    index = base * factor.cumprod()
-    return index
+    return base * factor.cumprod()
 
 
 def infer_periods_per_year(index: pd.DatetimeIndex) -> int:

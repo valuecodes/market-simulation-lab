@@ -28,7 +28,7 @@ def test_total_return():
 
 
 def test_total_return_requires_two_points():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="at least two points"):
         metrics.total_return(_equity([100.0]))
 
 

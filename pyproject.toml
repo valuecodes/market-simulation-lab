@@ -17,7 +17,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
+    "pytest-cov>=5.0",
     "ruff>=0.5",
+    "ty>=0.0.1a1",
     "poethepoet>=0.27",
 ]
 
@@ -35,8 +37,10 @@ packages = ["src/portfolio_research_lab"]
 dev = { cmd = "streamlit run app/Home.py", help = "Run the Streamlit app" }
 lint = { cmd = "ruff check .", help = "Lint with ruff" }
 fmt = { cmd = "ruff format .", help = "Format with ruff" }
+typecheck = { cmd = "ty check", help = "Type-check with ty" }
 test = { cmd = "pytest", help = "Run the test suite" }
-check = { sequence = ["lint", "test"], help = "Lint + run tests" }
+cov = { cmd = "pytest --cov --cov-report=term-missing", help = "Tests + coverage" }
+check = { sequence = ["lint", "typecheck", "test"], help = "Lint + typecheck + test" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -49,7 +53,31 @@ target-version = "py312"
 src = ["src", "tests", "app"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "UP",      # pyupgrade
+    "B",       # flake8-bugbear
+    "SIM",     # flake8-simplify
+    "C4",      # flake8-comprehensions
+    "PT",      # flake8-pytest-style
+    "PTH",     # flake8-use-pathlib
+    "RET",     # flake8-return
+    "TID",     # flake8-tidy-imports
+    "N",       # pep8-naming
+    "RUF",     # ruff-specific
+]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.coverage.run]
+source = ["portfolio_research_lab"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ty.environment]
+python-version = "3.12"

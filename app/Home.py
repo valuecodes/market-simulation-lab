@@ -66,8 +66,7 @@ def _load_stocks_cash() -> pd.DataFrame:
     # years before 1954 (when the fed funds series begins).
     stocks = _load_sp500()
     cash = rate_to_index(load_rate_series(FED_FUNDS_DATA)).rename("Cash (Fed Funds)")
-    combined = stocks.join(cash, how="left").ffill().dropna(how="any")
-    return combined
+    return stocks.join(cash, how="left").ffill().dropna(how="any")
 
 
 def _load_uploaded(file) -> pd.DataFrame:
@@ -83,8 +82,7 @@ def load_price_data_from_text(text: str) -> pd.DataFrame:
     if DATE_COLUMN not in frame.columns:
         raise ValueError(f"expected a {DATE_COLUMN!r} column")
     frame[DATE_COLUMN] = pd.to_datetime(frame[DATE_COLUMN])
-    frame = frame.set_index(DATE_COLUMN).sort_index().astype(float).ffill().dropna(how="any")
-    return frame
+    return frame.set_index(DATE_COLUMN).sort_index().astype(float).ffill().dropna(how="any")
 
 
 def _metrics_row(label: str, m: dict[str, float]) -> dict[str, str]:

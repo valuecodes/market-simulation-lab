@@ -7,6 +7,8 @@ validated, serialised to JSON and shared without touching the engine.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Assets whose combined weights fall within this tolerance of 1.0 are treated
@@ -84,19 +86,31 @@ class StrategyConfig(BaseModel):
     @classmethod
     def from_weights(
         cls,
-        allocations: dict[str, float],
+        allocations: Mapping[str, float],
         *,
         normalize: bool = False,
-        **kwargs: object,
+        name: str = "Buy & Hold",
+        initial_capital: float = 10_000.0,
+        benchmark: str | None = None,
+        trading_days_per_year: int = 252,
+        rebalance_frequency: str | None = None,
     ) -> StrategyConfig:
         """Build a config, optionally normalising raw weights to sum to 1.0.
 
-        Handy for UIs where the user enters percentages or shares that do not
-        already add up to one.
+        Handy for UIs where the user enters percentages or shares (integers are
+        fine) that do not already add up to one.
         """
+        weights: dict[str, float] = dict(allocations)
         if normalize:
-            total = sum(allocations.values())
+            total = sum(weights.values())
             if total <= 0:
                 raise ValueError("cannot normalize allocations that sum to <= 0")
-            allocations = {symbol: weight / total for symbol, weight in allocations.items()}
-        return cls(allocations=allocations, **kwargs)
+            weights = {symbol: weight / total for symbol, weight in weights.items()}
+        return cls(
+            allocations=weights,
+            name=name,
+            initial_capital=initial_capital,
+            benchmark=benchmark,
+            trading_days_per_year=trading_days_per_year,
+            rebalance_frequency=rebalance_frequency,
+        )

@@ -107,13 +107,18 @@ Common tasks are defined as [poe](https://poethepoet.natn.io/) tasks in
 
 ```bash
 uv run poe test          # run the test suite
-uv run poe lint          # lint
-uv run poe fmt           # format
-uv run poe check         # lint + test
+uv run poe cov           # tests + coverage report
+uv run poe lint          # lint (ruff)
+uv run poe fmt           # format (ruff)
+uv run poe typecheck     # type-check (ty)
+uv run poe check         # lint + typecheck + test
 ```
 
 These are thin wrappers — the equivalent raw commands still work
-(`uv run pytest`, `uv run ruff check .`, `uv run ruff format .`).
+(`uv run pytest`, `uv run ruff check .`, `uv run ruff format .`, `uv run ty check`).
+
+The same `lint`/`typecheck`/`test` gates run in CI on every push and pull
+request (see `.github/workflows/ci.yml`).
 
 ## Project structure
 

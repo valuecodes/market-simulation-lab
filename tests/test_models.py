@@ -15,7 +15,7 @@ def test_valid_config():
 
 
 def test_weights_must_sum_to_one():
-    with pytest.raises(ValidationError, match="sum to 1.0"):
+    with pytest.raises(ValidationError, match=r"sum to 1\.0"):
         StrategyConfig(allocations={"A": 0.6, "B": 0.6})
 
 
@@ -30,7 +30,7 @@ def test_non_positive_capital_rejected():
 
 
 def test_from_weights_normalizes():
-    config = StrategyConfig.from_weights({"A": 30, "B": 10}, normalize=True)
+    config = StrategyConfig.from_weights({"A": 30.0, "B": 10.0}, normalize=True)
     assert config.allocations["A"] == pytest.approx(0.75)
     assert config.allocations["B"] == pytest.approx(0.25)
 
