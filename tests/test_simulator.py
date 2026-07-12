@@ -87,3 +87,51 @@ def test_default_strategy_is_buy_and_hold(two_asset_prices: pd.DataFrame):
     config = StrategyConfig(allocations={"UP": 1.0})
     result = run_simulation(two_asset_prices, config)
     assert result.strategy_name == BuyAndHold.name
+
+
+# --- Rebalancing ---------------------------------------------------------
+# A three-month panel where asset A round-trips (100 -> 200 -> 100) while B is
+# flat. Buy-and-hold ends where it started; monthly rebalancing sells A high at
+# the February boundary and so ends ahead.
+@pytest.fixture
+def monthly_prices() -> pd.DataFrame:
+    dates = pd.to_datetime(["2020-01-15", "2020-02-15", "2020-03-15"])
+    return pd.DataFrame({"A": [100.0, 200.0, 100.0], "B": [100.0, 100.0, 100.0]}, index=dates)
+
+
+def test_no_rebalance_matches_buy_and_hold(monthly_prices: pd.DataFrame):
+    weights = {"A": 0.5, "B": 0.5}
+    drift = run_simulation(monthly_prices, StrategyConfig(allocations=weights))
+    explicit_none = run_simulation(
+        monthly_prices, StrategyConfig(allocations=weights, rebalance_frequency=None)
+    )
+    pd.testing.assert_series_equal(drift.equity, explicit_none.equity)
+    # Round-trip in A leaves buy-and-hold exactly where it started.
+    assert drift.equity.iloc[-1] == pytest.approx(drift.equity.iloc[0])
+
+
+def test_monthly_rebalance_restores_weights_and_captures_gain(monthly_prices: pd.DataFrame):
+    config = StrategyConfig(
+        allocations={"A": 0.5, "B": 0.5},
+        initial_capital=1_000.0,
+        rebalance_frequency="monthly",
+    )
+    result = run_simulation(monthly_prices, config)
+
+    # At the February rebalance the two legs are reset to an equal 50/50 split.
+    feb = pd.Timestamp("2020-02-15")
+    assert result.asset_values.loc[feb, "A"] == pytest.approx(750.0)
+    assert result.asset_values.loc[feb, "B"] == pytest.approx(750.0)
+
+    # Selling A at its peak locks in gains buy-and-hold gives back: 1000 -> 1125.
+    assert result.equity.iloc[-1] == pytest.approx(1_125.0)
+
+
+def test_rebalance_frequency_coarser_than_data_is_noop(monthly_prices: pd.DataFrame):
+    # The panel is entirely within 2020, so annual rebalancing never triggers.
+    weights = {"A": 0.5, "B": 0.5}
+    annual = run_simulation(
+        monthly_prices, StrategyConfig(allocations=weights, rebalance_frequency="annually")
+    )
+    drift = run_simulation(monthly_prices, StrategyConfig(allocations=weights))
+    pd.testing.assert_series_equal(annual.equity, drift.equity)

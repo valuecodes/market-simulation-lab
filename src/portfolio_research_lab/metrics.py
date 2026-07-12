@@ -34,7 +34,7 @@ def cagr(equity: pd.Series, periods_per_year: int = TRADING_DAYS_PER_YEAR) -> fl
     """Compound annual growth rate.
 
     Uses the number of *periods* in the series (not calendar dates) to derive
-    the number of years, which keeps the metric consistent with synthetic data.
+    the number of years, so the metric depends only on the observation cadence.
     """
     _require_two_points(equity)
     num_periods = len(equity) - 1

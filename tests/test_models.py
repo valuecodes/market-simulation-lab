@@ -38,3 +38,19 @@ def test_from_weights_normalizes():
 def test_from_weights_rejects_zero_total():
     with pytest.raises(ValueError, match="sum to <= 0"):
         StrategyConfig.from_weights({"A": 0.0}, normalize=True)
+
+
+def test_rebalance_frequency_defaults_to_none():
+    config = StrategyConfig(allocations={"A": 1.0})
+    assert config.rebalance_frequency is None
+
+
+@pytest.mark.parametrize("freq", ["monthly", "quarterly", "annually"])
+def test_valid_rebalance_frequencies(freq: str):
+    config = StrategyConfig(allocations={"A": 1.0}, rebalance_frequency=freq)
+    assert config.rebalance_frequency == freq
+
+
+def test_unknown_rebalance_frequency_rejected():
+    with pytest.raises(ValidationError, match="rebalance_frequency must be one of"):
+        StrategyConfig(allocations={"A": 1.0}, rebalance_frequency="daily")

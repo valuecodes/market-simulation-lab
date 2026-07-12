@@ -9,7 +9,13 @@ imports Streamlit, so the engine can be used from notebooks, scripts or tests.
 
 from __future__ import annotations
 
-from portfolio_research_lab.data import generate_synthetic_prices, load_price_data
+from portfolio_research_lab.data import (
+    infer_periods_per_year,
+    load_price_data,
+    load_rate_series,
+    parse_price_csv,
+    rate_to_index,
+)
 from portfolio_research_lab.models import StrategyConfig
 from portfolio_research_lab.simulator import SimulationResult, run_simulation
 from portfolio_research_lab.strategies import BuyAndHold, Strategy
@@ -19,8 +25,11 @@ __all__ = [
     "SimulationResult",
     "Strategy",
     "StrategyConfig",
-    "generate_synthetic_prices",
+    "infer_periods_per_year",
     "load_price_data",
+    "load_rate_series",
+    "parse_price_csv",
+    "rate_to_index",
     "run_simulation",
 ]
 

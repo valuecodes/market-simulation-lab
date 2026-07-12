@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # as fully invested. Anything outside is rejected to catch typos early.
 WEIGHT_TOLERANCE = 1e-6
 
+# Rebalancing cadences the simulator understands. ``None`` means buy-and-hold
+# (weights are set once and left to drift).
+REBALANCE_FREQUENCIES = frozenset({"monthly", "quarterly", "annually"})
+
 
 class StrategyConfig(BaseModel):
     """Reusable description of a portfolio strategy.
@@ -32,6 +36,10 @@ class StrategyConfig(BaseModel):
     trading_days_per_year:
         Periods used to annualise returns and volatility. Defaults to 252 for
         daily data; use 12 for monthly data.
+    rebalance_frequency:
+        How often to reset holdings back to ``allocations``. ``None`` (the
+        default) is buy-and-hold: weights are set once and drift. Otherwise one
+        of ``"monthly"``, ``"quarterly"`` or ``"annually"``.
     """
 
     model_config = {"extra": "forbid"}
@@ -41,6 +49,17 @@ class StrategyConfig(BaseModel):
     allocations: dict[str, float] = Field(min_length=1)
     benchmark: str | None = None
     trading_days_per_year: int = Field(default=252, gt=0)
+    rebalance_frequency: str | None = None
+
+    @field_validator("rebalance_frequency")
+    @classmethod
+    def _known_rebalance_frequency(cls, value: str | None) -> str | None:
+        if value is not None and value not in REBALANCE_FREQUENCIES:
+            allowed = ", ".join(sorted(REBALANCE_FREQUENCIES))
+            raise ValueError(
+                f"rebalance_frequency must be one of {{{allowed}}} or None, got {value!r}"
+            )
+        return value
 
     @field_validator("allocations")
     @classmethod

@@ -11,24 +11,26 @@ tests just as easily as from the UI.
 
 > ⚠️ **Disclaimer**
 > This application is provided for **research and educational purposes only**.
-> It uses simplified models and synthetic sample data, and it is **not financial
-> advice**. Nothing here is a recommendation to buy or sell any security. Do
-> your own research and consult a qualified professional before investing.
+> It uses simplified models, and it is **not financial advice**. Nothing here is
+> a recommendation to buy or sell any security. Do your own research and consult
+> a qualified professional before investing.
 
 ## Features
 
 The initial release is a small but working foundation:
 
 - Load historical asset prices from wide-format **CSV files**.
+- Test **multi-asset allocations** — e.g. stocks vs. a cash account built from
+  the **federal funds rate** (bundled `Stocks + Cash (1954+)` dataset).
 - Configure an **initial portfolio allocation** and reusable strategy parameters
   (validated with Pydantic).
-- Run a **buy-and-hold** portfolio simulation with transparent accounting.
+- Run a **buy-and-hold** or **periodically rebalanced** (monthly / quarterly /
+  annually) simulation with transparent accounting.
 - Calculate **portfolio value, total return, CAGR, annualised volatility and
   maximum drawdown**.
 - Display an interactive **equity curve** and **drawdown** chart (Plotly).
 - **Compare** the simulated strategy against a chosen benchmark asset.
-- **Synthetic sample data** generated on first run so the app works immediately.
-- **Unit tests** for returns, drawdown and portfolio accounting.
+- **Unit tests** for returns, drawdown, rate conversion and portfolio accounting.
 
 ## Requirements
 
@@ -51,10 +53,16 @@ development dependencies pinned in `pyproject.toml`.
 uv run streamlit run app/Home.py
 ```
 
-Streamlit opens the interface in your browser. On first run it generates a
-synthetic sample dataset (`sample_data/sample_prices.csv`, which is git-ignored),
-so you can configure an allocation and run a simulation right away. You can also
-upload your own wide-format CSV from the sidebar.
+Streamlit opens the interface in your browser. Pick a data source in the
+sidebar — the bundled **Stocks + Cash (1954+)** dataset (S&P 500 alongside a
+cash account that compounds the federal funds rate, from `data/`), the
+full-history **S&P 500 (daily)** series, or your own uploaded wide-format CSV —
+then set the allocation weights, choose a rebalancing cadence, and run a
+simulation. (The `data/` files are git-ignored and provided locally.)
+
+> **Note on "Cash (Fed Funds)":** the federal funds rate is a short-term
+> overnight rate. Compounding it models a risk-free cash / money-market account,
+> **not** long-term bonds — it has no duration or price risk.
 
 ## Using your own data
 
@@ -66,23 +74,27 @@ date,STOCKS,BONDS,GOLD
 2019-01-03,100.8,100.1,99.4
 ```
 
-To regenerate the bundled synthetic dataset:
-
-```bash
-uv run python sample_data/generate_sample_data.py
-```
-
 ## Using the engine directly
 
 ```python
-from portfolio_research_lab import load_price_data, StrategyConfig, run_simulation
+from portfolio_research_lab import (
+    StrategyConfig,
+    load_price_data,
+    load_rate_series,
+    rate_to_index,
+    run_simulation,
+)
 
-prices = load_price_data("sample_data/sample_prices.csv")
+# Stocks + a cash account that compounds the federal funds rate.
+stocks = load_price_data("data/sp500daily.csv").rename(columns={"close": "S&P 500"})
+cash = rate_to_index(load_rate_series("data/fed-funds-rate.csv")).rename("Cash (Fed Funds)")
+prices = stocks.join(cash, how="left").ffill().dropna(how="any")  # trims to 1954+
+
 config = StrategyConfig(
-    name="60/40",
+    name="60/40, rebalanced annually",
     initial_capital=10_000,
-    allocations={"STOCKS": 0.6, "BONDS": 0.4},
-    benchmark="BENCHMARK",
+    allocations={"S&P 500": 0.6, "Cash (Fed Funds)": 0.4},
+    rebalance_frequency="annually",  # None = buy & hold
 )
 result = run_simulation(prices, config)
 print(result.metrics())
@@ -106,13 +118,12 @@ market-simulation-lab/
 │   └── portfolio_research_lab/
 │       ├── __init__.py            # public API
 │       ├── models.py              # Pydantic configuration models
-│       ├── data.py                # CSV loading + synthetic data generation
+│       ├── data.py                # CSV / rate loading + cleaning
 │       ├── strategies.py          # strategy definitions (buy-and-hold)
 │       ├── simulator.py           # portfolio accounting / engine
 │       └── metrics.py             # returns, CAGR, volatility, drawdown
 ├── tests/                         # pytest unit tests
-├── sample_data/
-│   └── generate_sample_data.py    # generates sample_prices.csv (git-ignored)
+├── data/                          # local price CSVs (git-ignored)
 ├── pyproject.toml
 ├── README.md
 └── .gitignore
@@ -122,9 +133,8 @@ market-simulation-lab/
 
 To keep the foundation small and understandable, this project deliberately
 avoids databases, authentication, cloud services, machine learning and
-premature optimization. Transaction costs, taxes, leverage, cash yield and
-rebalancing are **not** modelled yet — the strategy interface leaves room to add
-them later.
+premature optimization. Transaction costs, taxes and leverage are **not**
+modelled yet — the strategy interface leaves room to add them later.
 
 ## License
 

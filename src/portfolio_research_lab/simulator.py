@@ -3,19 +3,25 @@
 The simulator turns a strategy plus price data into an equity curve and the
 underlying holdings. It performs plain portfolio accounting: buy fractional
 units at the first period's prices, then mark the position to market every
-period. There is no leverage, no transaction cost and no cash yield — this is a
-deliberately small, transparent foundation.
+period. If ``config.rebalance_frequency`` is set, holdings are reset back to the
+strategy's target weights at each period boundary; otherwise the weights drift
+(buy-and-hold). There is no leverage, no transaction cost and no cash yield —
+this is a deliberately small, transparent foundation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from portfolio_research_lab import metrics
 from portfolio_research_lab.models import StrategyConfig
 from portfolio_research_lab.strategies import BuyAndHold, Strategy
+
+# Rebalancing cadence -> pandas period alias used to find period boundaries.
+_FREQUENCY_CODES: dict[str, str] = {"monthly": "M", "quarterly": "Q", "annually": "Y"}
 
 
 @dataclass(slots=True)
@@ -86,18 +92,15 @@ def run_simulation(
     weights = strategy.initial_weights(prices, config)
     symbols = list(weights)
     asset_prices = prices[symbols]
-    first_prices = asset_prices.iloc[0]
 
-    # Buy fractional units once at the opening prices, then hold.
-    capital_per_asset = pd.Series(weights, dtype=float) * config.initial_capital
-    units = capital_per_asset / first_prices
-
-    holdings = pd.DataFrame(
-        [units.to_dict()] * len(asset_prices),
-        index=asset_prices.index,
-        columns=symbols,
+    rebalance_dates = _rebalance_dates(asset_prices.index, config.rebalance_frequency)
+    holdings = _holdings_schedule(
+        asset_prices,
+        weights,
+        config.initial_capital,
+        rebalance_dates,
     )
-    asset_values = asset_prices.mul(units, axis=1)
+    asset_values = asset_prices.mul(holdings)
     equity = asset_values.sum(axis=1).rename("equity")
 
     benchmark_equity = _benchmark_equity(prices, config)
@@ -120,3 +123,44 @@ def _benchmark_equity(prices: pd.DataFrame, config: StrategyConfig) -> pd.Series
     series = prices[symbol]
     scaled = series / series.iloc[0] * config.initial_capital
     return scaled.rename("benchmark")
+
+
+def _rebalance_dates(index: pd.DatetimeIndex, frequency: str | None) -> pd.DatetimeIndex:
+    """Dates on which to reset holdings: the first row of each new period.
+
+    Returns an empty index for ``None`` (buy-and-hold). The opening date is never
+    a rebalance date — holdings are established there by the initial purchase.
+    """
+    if frequency is None:
+        return index[:0]
+    periods = index.to_period(_FREQUENCY_CODES[frequency])
+    is_new_period = np.concatenate([[False], periods[1:] != periods[:-1]])
+    return index[is_new_period]
+
+
+def _holdings_schedule(
+    asset_prices: pd.DataFrame,
+    weights: dict[str, float],
+    capital: float,
+    rebalance_dates: pd.DatetimeIndex,
+) -> pd.DataFrame:
+    """Units held per asset over time.
+
+    Buys the target allocation at the opening prices, then carries units forward
+    unchanged except on ``rebalance_dates``, where the current portfolio value is
+    re-split according to the target weights. With no rebalance dates this yields
+    constant units (buy-and-hold).
+    """
+    symbols = list(asset_prices.columns)
+    weight_vec = pd.Series(weights, dtype=float).reindex(symbols)
+    rebalance_set = set(rebalance_dates)
+
+    units = weight_vec * capital / asset_prices.iloc[0]
+    rows: list[pd.Series] = []
+    for date, prices_today in asset_prices.iterrows():
+        if date in rebalance_set:
+            current_equity = float((prices_today * units).sum())
+            units = weight_vec * current_equity / prices_today
+        rows.append(units)
+
+    return pd.DataFrame(rows, index=asset_prices.index, columns=symbols)

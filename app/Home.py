@@ -28,25 +28,46 @@ import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from portfolio_research_lab.data import (  # noqa: E402
-    generate_synthetic_prices,
     load_price_data,
+    load_rate_series,
+    rate_to_index,
 )
 from portfolio_research_lab.models import StrategyConfig  # noqa: E402
 from portfolio_research_lab.simulator import run_simulation  # noqa: E402
 
-SAMPLE_DATA = PROJECT_ROOT / "sample_data" / "sample_prices.csv"
+SP500_DATA = PROJECT_ROOT / "data" / "sp500daily.csv"
+FED_FUNDS_DATA = PROJECT_ROOT / "data" / "fed-funds-rate.csv"
+
+# Muted (low-opacity) colours for the per-asset 100%-allocation reference lines
+# on the equity chart. Cycled if there are more assets than colours.
+_REFERENCE_COLORS = (
+    "rgba(99,110,250,0.40)",
+    "rgba(239,85,59,0.40)",
+    "rgba(0,204,150,0.40)",
+    "rgba(171,99,250,0.40)",
+)
 
 st.set_page_config(page_title="Portfolio Research Lab", page_icon="📈", layout="wide")
 
 
 @st.cache_data(show_spinner=False)
-def _load_sample() -> pd.DataFrame:
-    # The bundled CSV is generated (and git-ignored). Create it on first run so
-    # the app works immediately on a fresh clone.
-    if not SAMPLE_DATA.exists():
-        SAMPLE_DATA.parent.mkdir(parents=True, exist_ok=True)
-        generate_synthetic_prices().to_csv(SAMPLE_DATA)
-    return load_price_data(SAMPLE_DATA)
+def _load_sp500() -> pd.DataFrame:
+    # Daily S&P 500 closing prices (data/sp500daily.csv, column `close`).
+    # Rename to a readable asset name for the UI and metrics table.
+    return load_price_data(SP500_DATA).rename(columns={"close": "S&P 500"})
+
+
+@st.cache_data(show_spinner=False)
+def _load_stocks_cash() -> pd.DataFrame:
+    # Two-asset frame: S&P 500 alongside a synthetic cash account that compounds
+    # the daily federal funds rate. The cash index is built on the fed funds'
+    # native (calendar) dates so weekend accrual is baked into each level, then
+    # sampled onto the S&P trading days by the join. dropna trims the S&P-only
+    # years before 1954 (when the fed funds series begins).
+    stocks = _load_sp500()
+    cash = rate_to_index(load_rate_series(FED_FUNDS_DATA)).rename("Cash (Fed Funds)")
+    combined = stocks.join(cash, how="left").ffill().dropna(how="any")
+    return combined
 
 
 def _load_uploaded(file) -> pd.DataFrame:
@@ -85,14 +106,24 @@ def main() -> None:
 
     # --- Data source ------------------------------------------------------
     st.sidebar.header("1 · Data")
-    source = st.sidebar.radio("Price data source", ["Sample data", "Upload CSV"], index=0)
+    source = st.sidebar.radio(
+        "Price data source",
+        ["Stocks + Cash (1954+)", "S&P 500 (daily)", "Upload CSV"],
+        index=0,
+    )
     try:
-        if source == "Sample data":
-            prices = _load_sample()
+        if source == "Stocks + Cash (1954+)":
+            prices = _load_stocks_cash()
+            st.sidebar.caption(
+                "'Cash (Fed Funds)' compounds the daily federal funds rate — a "
+                "risk-free short-rate proxy, without the duration/price risk of real bonds."
+            )
+        elif source == "S&P 500 (daily)":
+            prices = _load_sp500()
         else:
             upload = st.sidebar.file_uploader("Wide-format CSV (date + asset columns)", type="csv")
             if upload is None:
-                st.info("Upload a CSV, or switch to sample data, to begin.")
+                st.info("Upload a CSV, or switch to a bundled dataset, to begin.")
                 st.stop()
             prices = _load_uploaded(upload)
     except (ValueError, FileNotFoundError) as exc:
@@ -112,16 +143,35 @@ def main() -> None:
     )
 
     st.sidebar.subheader("Allocation weights (%)")
-    st.sidebar.caption("Assets are held passively; weights are normalised to 100%.")
-    default_pct = round(100 / len(assets))
-    raw_weights: dict[str, float] = {}
-    for asset in assets:
-        raw_weights[asset] = st.sidebar.slider(asset, 0, 100, default_pct, step=5)
+    if len(assets) == 2:
+        # Two assets collapse to one intuitive slider: the left end is 100% of
+        # the second asset, the right end 100% of the first. For the bundled
+        # Stocks + Cash frame (columns ordered S&P 500, Cash) that reads as
+        # "100% cash ↔ 100% stocks".
+        right_asset, left_asset = assets[0], assets[1]
+        st.sidebar.caption(f"0% → 100% {left_asset} · 100% → 100% {right_asset}")
+        right_pct = st.sidebar.slider(f"% in {right_asset}", 0, 100, 60, step=5)
+        raw_weights = {right_asset: right_pct, left_asset: 100 - right_pct}
+    else:
+        st.sidebar.caption("Assets are held passively; weights are normalised to 100%.")
+        default_pct = round(100 / len(assets))
+        raw_weights = {
+            asset: st.sidebar.slider(asset, 0, 100, default_pct, step=5) for asset in assets
+        }
 
     selected = {a: w for a, w in raw_weights.items() if w > 0}
     if not selected:
         st.warning("Give at least one asset a non-zero weight.")
         st.stop()
+
+    rebalance_labels = {
+        "None (buy & hold)": None,
+        "Monthly": "monthly",
+        "Quarterly": "quarterly",
+        "Annually": "annually",
+    }
+    rebalance_choice = st.sidebar.selectbox("Rebalancing", list(rebalance_labels), index=0)
+    rebalance_frequency = rebalance_labels[rebalance_choice]
 
     st.sidebar.header("3 · Benchmark")
     benchmark = st.sidebar.selectbox("Benchmark asset", ["(none)", *assets])
@@ -135,6 +185,7 @@ def main() -> None:
             name=name,
             initial_capital=initial_capital,
             benchmark=benchmark_symbol,
+            rebalance_frequency=rebalance_frequency,
         )
         result = run_simulation(prices, config)
     except ValueError as exc:
@@ -142,19 +193,35 @@ def main() -> None:
         st.stop()
 
     normalized = ", ".join(f"{a} {w:.0%}" for a, w in config.allocations.items())
+    rebalance_note = (
+        "buy & hold" if rebalance_frequency is None else f"rebalanced {rebalance_choice.lower()}"
+    )
     st.subheader("Portfolio")
-    st.write(f"**{config.name}** — {normalized}")
+    st.write(f"**{config.name}** — {normalized} · {rebalance_note}")
 
     # --- Metrics ----------------------------------------------------------
     rows = [_metrics_row(config.name, result.metrics())]
     bench = result.benchmark_metrics()
     if bench is not None:
         rows.append(_metrics_row(f"{benchmark_symbol} (benchmark)", bench))
-    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), use_container_width=True)
+    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), width="stretch")
 
     # --- Equity curve -----------------------------------------------------
     st.subheader("Equity curve")
     equity_fig = go.Figure()
+    # Dim reference lines: 100% buy-and-hold of each single asset, scaled to the
+    # same starting capital, drawn underneath the portfolio for comparison.
+    for i, asset in enumerate(assets):
+        reference = initial_capital * prices[asset] / prices[asset].iloc[0]
+        equity_fig.add_trace(
+            go.Scatter(
+                x=reference.index,
+                y=reference,
+                name=f"100% {asset}",
+                mode="lines",
+                line={"color": _REFERENCE_COLORS[i % len(_REFERENCE_COLORS)], "width": 1},
+            )
+        )
     equity_fig.add_trace(
         go.Scatter(x=result.equity.index, y=result.equity, name=config.name, mode="lines")
     )
@@ -171,7 +238,7 @@ def main() -> None:
     equity_fig.update_layout(
         margin={"t": 20, "b": 20}, yaxis_title="Portfolio value", hovermode="x unified"
     )
-    st.plotly_chart(equity_fig, use_container_width=True)
+    st.plotly_chart(equity_fig, width="stretch")
 
     # --- Drawdown ---------------------------------------------------------
     st.subheader("Drawdown")
@@ -184,11 +251,19 @@ def main() -> None:
         yaxis_tickformat=".0%",
         hovermode="x unified",
     )
-    st.plotly_chart(dd_fig, use_container_width=True)
+    st.plotly_chart(dd_fig, width="stretch")
 
     with st.expander("Show holdings & asset values"):
-        st.write("Units held (constant for buy-and-hold):")
-        st.dataframe(result.holdings.head(1), use_container_width=True)
+        holdings_note = (
+            "Units held (constant for buy-and-hold):"
+            if rebalance_frequency is None
+            else "Units held (reset on each rebalance) — first & last rows:"
+        )
+        st.write(holdings_note)
+        st.dataframe(
+            pd.concat([result.holdings.head(1), result.holdings.tail(1)]),
+            width="stretch",
+        )
         st.write("Asset market values over time:")
         st.line_chart(result.asset_values)
 
