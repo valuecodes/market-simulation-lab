@@ -87,9 +87,13 @@ def run_cash_deploy(prices: pd.DataFrame, config: CashDeployConfig) -> CashDeplo
     stock = prices[config.stock_symbol].to_numpy(dtype=float)
     cash_level = prices[config.cash_symbol].to_numpy(dtype=float)
 
-    if stock[0] <= 0.0 or not np.isfinite(stock[0]):
-        raise ValueError(f"the first stock price must be positive, got {stock[0]}")
+    if (stock <= 0.0).any() or not np.isfinite(stock).all():
+        bad = stock[~np.isfinite(stock) | (stock <= 0.0)][0]
+        raise ValueError(f"stock prices must be finite and positive, got {bad}")
 
+    if (cash_level <= 0.0).any() or not np.isfinite(cash_level).all():
+        bad = cash_level[~np.isfinite(cash_level) | (cash_level <= 0.0)][0]
+        raise ValueError(f"cash levels must be finite and positive, got {bad}")
     # Per-step cash growth factor = ratio of consecutive money-market levels; the
     # first step has no prior level so it is 1.0. A non-positive/non-finite prior
     # level would corrupt the ratio, so guard it (falls back to no growth).
