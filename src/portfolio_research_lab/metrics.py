@@ -55,6 +55,30 @@ def annualized_volatility(
     return float(returns.std(ddof=1) * np.sqrt(periods_per_year))
 
 
+def sharpe_ratio(
+    returns: pd.Series,
+    periods_per_year: int = TRADING_DAYS_PER_YEAR,
+    risk_free: pd.Series | float = 0.0,
+) -> float:
+    """Annualised Sharpe ratio of periodic returns.
+
+    Excess return over ``risk_free`` (a per-period rate, either a constant or a
+    series aligned to ``returns``) divided by the annualised volatility of those
+    excess returns. Returns 0.0 when there is too little data or no variation.
+    """
+    if len(returns) < 2:
+        return 0.0
+    if isinstance(risk_free, pd.Series):
+        rf: pd.Series | float = risk_free.reindex(returns.index).fillna(0.0)
+    else:
+        rf = risk_free
+    excess = returns - rf
+    vol = annualized_volatility(excess, periods_per_year)
+    if vol == 0.0:
+        return 0.0
+    return float(excess.mean() * periods_per_year / vol)
+
+
 def drawdown_series(equity: pd.Series) -> pd.Series:
     """Drawdown at each point: ``value / running_peak - 1`` (values <= 0)."""
     running_peak = equity.cummax()

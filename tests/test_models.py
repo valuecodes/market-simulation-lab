@@ -7,7 +7,12 @@ import math
 import pytest
 from pydantic import ValidationError
 
-from portfolio_research_lab.models import StrategyConfig
+from portfolio_research_lab.models import (
+    PRESET_RULES,
+    CashDeployConfig,
+    DeployRule,
+    StrategyConfig,
+)
 
 
 def test_valid_config():
@@ -69,3 +74,75 @@ def test_valid_rebalance_frequencies(freq: str):
 def test_unknown_rebalance_frequency_rejected():
     with pytest.raises(ValidationError, match="rebalance_frequency must be one of"):
         StrategyConfig(allocations={"A": 1.0}, rebalance_frequency="daily")
+
+
+# --- DeployRule ----------------------------------------------------------
+
+
+def test_deploy_rule_valid():
+    rule = DeployRule(name="r", thresholds=(0.1, 0.2, 0.3), usages=(0.5, 0.3, 0.2))
+    assert rule.usage_sum == pytest.approx(1.0)
+
+
+def test_deploy_rule_thresholds_must_increase():
+    with pytest.raises(ValidationError, match="strictly increasing"):
+        DeployRule(name="r", thresholds=(0.2, 0.1), usages=(0.5, 0.5))
+
+
+def test_deploy_rule_thresholds_must_be_in_unit_interval():
+    with pytest.raises(ValidationError, match=r"in \(0, 1\)"):
+        DeployRule(name="r", thresholds=(0.1, 1.5), usages=(0.5, 0.5))
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf])
+def test_deploy_rule_rejects_non_finite_threshold(bad: float):
+    with pytest.raises(ValidationError):
+        DeployRule(name="r", thresholds=(0.1, bad), usages=(0.5, 0.5))
+
+
+def test_deploy_rule_usages_must_be_positive():
+    with pytest.raises(ValidationError, match="must be a positive number"):
+        DeployRule(name="r", thresholds=(0.1, 0.2), usages=(0.5, -0.1))
+
+
+def test_deploy_rule_lengths_must_match():
+    with pytest.raises(ValidationError, match="equal length"):
+        DeployRule(name="r", thresholds=(0.1, 0.2), usages=(1.0,))
+
+
+# --- CashDeployConfig ----------------------------------------------------
+
+_RULE = DeployRule(name="r", thresholds=(0.1, 0.2), usages=(0.5, 0.5))
+
+
+def test_cash_deploy_config_defaults():
+    config = CashDeployConfig(rule=_RULE)
+    assert config.reserve_pct == pytest.approx(0.30)
+    assert config.refill_rate_per_year == pytest.approx(0.25)
+    assert config.trading_days_per_year == 252
+
+
+@pytest.mark.parametrize("reserve", [-0.1, 1.1])
+def test_cash_deploy_config_reserve_pct_bounds(reserve: float):
+    with pytest.raises(ValidationError):
+        CashDeployConfig(rule=_RULE, reserve_pct=reserve)
+
+
+def test_cash_deploy_config_rejects_equal_symbols():
+    with pytest.raises(ValidationError, match="must be different"):
+        CashDeployConfig(rule=_RULE, stock_symbol="X", cash_symbol="X")
+
+
+def test_cash_deploy_config_rejects_non_positive_capital():
+    with pytest.raises(ValidationError):
+        CashDeployConfig(rule=_RULE, initial_capital=0)
+
+
+# --- Presets -------------------------------------------------------------
+
+
+def test_preset_rules_present_and_valid():
+    assert set(PRESET_RULES) == {"Käyttäjän sääntö", "Kasvuoptimi", "Riskioptimi", "Suositus"}
+    for rule in PRESET_RULES.values():
+        assert len(rule.thresholds) == len(rule.usages) == 5
+        assert rule.usage_sum == pytest.approx(1.0)

@@ -6,7 +6,12 @@ import pandas as pd
 import pytest
 
 from portfolio_research_lab import data
-from portfolio_research_lab.data import load_rate_series, parse_price_csv, rate_to_index
+from portfolio_research_lab.data import (
+    load_rate_series,
+    load_stocks_cash,
+    parse_price_csv,
+    rate_to_index,
+)
 
 _VALID_CSV = "date,STOCKS,BONDS\n2020-01-01,100.0,100.0\n2020-01-02,101.0,100.5\n"
 
@@ -139,3 +144,43 @@ def test_parse_price_csv_rejects_overlong_symbol():
     csv = f"date,{long_name}\n2020-01-01,100.0\n2020-01-02,101.0\n"
     with pytest.raises(ValueError, match="asset name exceeds"):
         parse_price_csv(csv)
+
+
+# --- load_stocks_cash ----------------------------------------------------
+
+
+def _write_stocks_cash(tmp_path):
+    # S&P starts a year before the fed funds series so the join must trim it.
+    sp = tmp_path / "sp.csv"
+    sp.write_text(
+        "date,close\n"
+        "2019-01-01,50.0\n"  # pre-rate-history: dropped by the inner join
+        "2020-01-01,100.0\n"
+        "2020-01-02,101.0\n"
+    )
+    fed = tmp_path / "fed.csv"
+    fed.write_text('"Date","Value"\n"01/01/2020",3.6\n"01/02/2020",3.6\n')
+    return sp, fed
+
+
+def test_load_stocks_cash_columns_and_trim(tmp_path):
+    sp, fed = _write_stocks_cash(tmp_path)
+    frame = load_stocks_cash(sp, fed)
+    assert list(frame.columns) == ["S&P 500", "Cash (Fed Funds)"]
+    # The 2019 S&P row has no cash level and is trimmed.
+    assert frame.index.min() == pd.Timestamp("2020-01-01")
+    assert len(frame) == 2
+    # Cash is a growth index pinned to its base on the first shared day.
+    assert (frame["Cash (Fed Funds)"].diff().dropna() > 0).all()
+
+
+def test_load_stocks_cash_custom_names(tmp_path):
+    sp, fed = _write_stocks_cash(tmp_path)
+    frame = load_stocks_cash(sp, fed, stock_name="Stocks", cash_name="Money Market")
+    assert list(frame.columns) == ["Stocks", "Money Market"]
+
+
+def test_load_stocks_cash_rejects_equal_names(tmp_path):
+    sp, fed = _write_stocks_cash(tmp_path)
+    with pytest.raises(ValueError, match="must be different"):
+        load_stocks_cash(sp, fed, stock_name="X", cash_name="X")
