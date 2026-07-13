@@ -142,7 +142,7 @@ def test_cash_deploy_config_rejects_non_positive_capital():
 
 
 def test_preset_rules_present_and_valid():
-    assert set(PRESET_RULES) == {"Käyttäjän sääntö", "Kasvuoptimi", "Riskioptimi", "Suositus"}
+    assert set(PRESET_RULES) == {"User rule", "Growth optimum", "Risk optimum", "Recommended"}
     for rule in PRESET_RULES.values():
         assert len(rule.thresholds) == len(rule.usages) == 5
         assert rule.usage_sum == pytest.approx(1.0)

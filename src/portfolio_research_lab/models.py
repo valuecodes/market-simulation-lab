@@ -230,26 +230,26 @@ class CashDeployConfig(BaseModel):
         return self
 
 
-# The named deploy rules from the research brief, keyed by their (Finnish) name.
-# Thresholds and usages are expressed as fractions (10% -> 0.10).
+# The named deploy rules from the research brief. Thresholds and usages are
+# expressed as fractions (10% -> 0.10).
 PRESET_RULES: dict[str, DeployRule] = {
-    "Käyttäjän sääntö": DeployRule(
-        name="Käyttäjän sääntö",
+    "User rule": DeployRule(
+        name="User rule",
         thresholds=(0.10, 0.20, 0.30, 0.40, 0.50),
         usages=(0.15, 0.30, 0.30, 0.20, 0.05),
     ),
-    "Kasvuoptimi": DeployRule(
-        name="Kasvuoptimi",
+    "Growth optimum": DeployRule(
+        name="Growth optimum",
         thresholds=(0.10, 0.15, 0.20, 0.30, 0.40),
         usages=(0.30, 0.25, 0.20, 0.15, 0.10),
     ),
-    "Riskioptimi": DeployRule(
-        name="Riskioptimi",
+    "Risk optimum": DeployRule(
+        name="Risk optimum",
         thresholds=(0.15, 0.20, 0.30, 0.40, 0.50),
         usages=(0.10, 0.15, 0.20, 0.25, 0.30),
     ),
-    "Suositus": DeployRule(
-        name="Suositus",
+    "Recommended": DeployRule(
+        name="Recommended",
         thresholds=(0.15, 0.20, 0.30, 0.40, 0.50),
         usages=(0.30, 0.25, 0.20, 0.15, 0.10),
     ),
