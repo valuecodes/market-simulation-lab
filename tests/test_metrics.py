@@ -79,3 +79,27 @@ def test_summarize_keys():
         "annualized_volatility",
         "max_drawdown",
     }
+
+
+# --- Sharpe ratio --------------------------------------------------------
+
+
+def test_sharpe_zero_when_too_few_points():
+    assert metrics.sharpe_ratio(pd.Series([0.01])) == 0.0
+
+
+def test_sharpe_zero_when_no_variation():
+    # Constant returns => zero volatility => Sharpe defined as 0.0.
+    assert metrics.sharpe_ratio(pd.Series([0.01, 0.01, 0.01])) == 0.0
+
+
+def test_sharpe_positive_for_steady_gains_above_risk_free():
+    returns = pd.Series([0.01, 0.02, 0.015, 0.005])
+    assert metrics.sharpe_ratio(returns, periods_per_year=252) > 0.0
+
+
+def test_sharpe_subtracts_risk_free_series():
+    returns = pd.Series([0.02, 0.02, 0.02, 0.02], index=pd.RangeIndex(4))
+    # A risk-free series equal to the returns leaves zero excess => Sharpe 0.
+    rf = pd.Series([0.02, 0.02, 0.02, 0.02], index=pd.RangeIndex(4))
+    assert metrics.sharpe_ratio(returns, risk_free=rf) == 0.0

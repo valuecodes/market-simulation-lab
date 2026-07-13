@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from itertools import pairwise
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -117,3 +118,139 @@ class StrategyConfig(BaseModel):
             trading_days_per_year=trading_days_per_year,
             rebalance_frequency=rebalance_frequency,
         )
+
+
+class DeployRule(BaseModel):
+    """A tactical cash-deployment rule for the cash-deploy backtest.
+
+    A rule splits a cash reserve into tranches keyed to market-drawdown depth:
+    when the market draws down past each ``thresholds[k]`` (a positive fraction,
+    so ``0.10`` means a 10% fall from the running peak), the fraction
+    ``usages[k]`` of the reserve is deployed into stocks.
+
+    Attributes
+    ----------
+    name:
+        Human-readable label shown in the UI.
+    thresholds:
+        Drawdown magnitudes as positive fractions, strictly increasing, each in
+        ``(0, 1)``. E.g. ``(0.10, 0.20, 0.30, 0.40, 0.50)``.
+    usages:
+        Fraction of the reserve to deploy at each matching threshold. Same length
+        as ``thresholds`` and each positive. Usages summing to 1.0 mean the whole
+        reserve is deployed by the deepest threshold, but this is *not* enforced:
+        a sum below 1.0 leaves a permanent cash residue, and a sum above 1.0 is
+        capped by the cash actually available at run time.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(min_length=1)
+    thresholds: tuple[float, ...] = Field(min_length=1)
+    usages: tuple[float, ...] = Field(min_length=1)
+
+    @field_validator("thresholds")
+    @classmethod
+    def _thresholds_increasing_in_unit_interval(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        for threshold in value:
+            if not math.isfinite(threshold) or not 0.0 < threshold < 1.0:
+                raise ValueError(f"each threshold must be a number in (0, 1), got {threshold}")
+        if any(b <= a for a, b in pairwise(value)):
+            raise ValueError(f"thresholds must be strictly increasing, got {value}")
+        return value
+
+    @field_validator("usages")
+    @classmethod
+    def _usages_must_be_positive(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        for usage in value:
+            if not math.isfinite(usage) or usage <= 0:
+                raise ValueError(f"each reserve usage must be a positive number, got {usage}")
+        return value
+
+    @model_validator(mode="after")
+    def _thresholds_and_usages_align(self) -> DeployRule:
+        if len(self.thresholds) != len(self.usages):
+            raise ValueError(
+                f"thresholds and usages must have equal length, got "
+                f"{len(self.thresholds)} and {len(self.usages)}"
+            )
+        return self
+
+    @property
+    def usage_sum(self) -> float:
+        """Total reserve fraction deployed if every threshold is reached."""
+        return sum(self.usages)
+
+
+class CashDeployConfig(BaseModel):
+    """Configuration for a tactical cash-deployment backtest.
+
+    Start with ``reserve_pct`` of capital in cash (a money-market account) and
+    the rest in stocks. As the market draws down, deploy the reserve into stocks
+    per ``rule``; once the market recovers to a new high, refill the reserve
+    toward its target by drip-selling stocks at ``refill_rate_per_year`` of the
+    target per year.
+
+    Attributes
+    ----------
+    name:
+        Human-readable label shown in the UI and charts.
+    initial_capital:
+        Starting capital, in the currency of the price data.
+    reserve_pct:
+        Cash fraction at inception, in ``[0, 1]``. Stocks get ``1 - reserve_pct``.
+    rule:
+        The :class:`DeployRule` that drives deployment.
+    refill_rate_per_year:
+        Fraction of the *target* reserve moved back from stocks to cash per year,
+        while at a new all-time high. ``0.25`` refills a fully-drained reserve in
+        roughly four years.
+    trading_days_per_year:
+        Periods used to annualise the refill drip and metrics (252 for daily).
+    stock_symbol / cash_symbol:
+        Column names of the stock and cash legs in the price frame passed to the
+        engine.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(default="Cash Deploy", min_length=1)
+    initial_capital: float = Field(default=10_000.0, gt=0, allow_inf_nan=False)
+    reserve_pct: float = Field(default=0.30, ge=0.0, le=1.0)
+    rule: DeployRule
+    refill_rate_per_year: float = Field(default=0.25, ge=0.0, allow_inf_nan=False)
+    trading_days_per_year: int = Field(default=252, gt=0)
+    stock_symbol: str = Field(default="S&P 500", min_length=1)
+    cash_symbol: str = Field(default="Cash (Fed Funds)", min_length=1)
+
+    @model_validator(mode="after")
+    def _symbols_must_differ(self) -> CashDeployConfig:
+        if self.stock_symbol == self.cash_symbol:
+            raise ValueError("stock_symbol and cash_symbol must be different")
+        return self
+
+
+# The named deploy rules from the research brief, keyed by their (Finnish) name.
+# Thresholds and usages are expressed as fractions (10% -> 0.10).
+PRESET_RULES: dict[str, DeployRule] = {
+    "Käyttäjän sääntö": DeployRule(
+        name="Käyttäjän sääntö",
+        thresholds=(0.10, 0.20, 0.30, 0.40, 0.50),
+        usages=(0.15, 0.30, 0.30, 0.20, 0.05),
+    ),
+    "Kasvuoptimi": DeployRule(
+        name="Kasvuoptimi",
+        thresholds=(0.10, 0.15, 0.20, 0.30, 0.40),
+        usages=(0.30, 0.25, 0.20, 0.15, 0.10),
+    ),
+    "Riskioptimi": DeployRule(
+        name="Riskioptimi",
+        thresholds=(0.15, 0.20, 0.30, 0.40, 0.50),
+        usages=(0.10, 0.15, 0.20, 0.25, 0.30),
+    ),
+    "Suositus": DeployRule(
+        name="Suositus",
+        thresholds=(0.15, 0.20, 0.30, 0.40, 0.50),
+        usages=(0.30, 0.25, 0.20, 0.15, 0.10),
+    ),
+}

@@ -158,6 +158,35 @@ def rate_to_index(
     return base * factor.cumprod()
 
 
+def load_stocks_cash(
+    sp500_path: str | Path,
+    fed_funds_path: str | Path,
+    *,
+    stock_name: str = "S&P 500",
+    cash_name: str = "Cash (Fed Funds)",
+) -> pd.DataFrame:
+    """Build the two-asset stocks + cash price frame used across the app.
+
+    Loads daily S&P 500 closes and turns the federal funds rate into a
+    compounding money-market index via :func:`rate_to_index`, then joins them on
+    the S&P trading days. The cash index is built on the fed funds' native
+    (calendar) dates first, so weekend interest accrual is baked into each level
+    before the join samples it onto trading days. The final ``dropna`` trims the
+    S&P-only years before the fed funds series begins (1954).
+
+    Returns a DataFrame with exactly two float columns, ``stock_name`` and
+    ``cash_name``, indexed by a sorted :class:`~pandas.DatetimeIndex`.
+    """
+    if stock_name == cash_name:
+        raise ValueError("stock_name and cash_name must be different")
+    stocks = load_price_data(sp500_path).rename(columns={"close": stock_name})
+    cash = rate_to_index(load_rate_series(fed_funds_path)).rename(cash_name)
+    frame = stocks.join(cash, how="left").ffill().dropna(how="any")
+    if frame.empty:
+        raise ValueError("stocks + cash frame is empty after aligning the two series")
+    return frame
+
+
 def infer_periods_per_year(index: pd.DatetimeIndex) -> int:
     """Guess how many observations occur per year from the index spacing.
 

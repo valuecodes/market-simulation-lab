@@ -28,9 +28,8 @@ import streamlit as st  # noqa: E402
 
 from portfolio_research_lab.data import (  # noqa: E402
     load_price_data,
-    load_rate_series,
+    load_stocks_cash,
     parse_price_csv,
-    rate_to_index,
 )
 from portfolio_research_lab.models import StrategyConfig  # noqa: E402
 from portfolio_research_lab.simulator import run_simulation  # noqa: E402
@@ -60,13 +59,9 @@ def _load_sp500() -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def _load_stocks_cash() -> pd.DataFrame:
     # Two-asset frame: S&P 500 alongside a synthetic cash account that compounds
-    # the daily federal funds rate. The cash index is built on the fed funds'
-    # native (calendar) dates so weekend accrual is baked into each level, then
-    # sampled onto the S&P trading days by the join. dropna trims the S&P-only
-    # years before 1954 (when the fed funds series begins).
-    stocks = _load_sp500()
-    cash = rate_to_index(load_rate_series(FED_FUNDS_DATA)).rename("Cash (Fed Funds)")
-    return stocks.join(cash, how="left").ffill().dropna(how="any")
+    # the daily federal funds rate. Built by the shared engine loader
+    # (data.load_stocks_cash), which the Cash Deploy page reuses too.
+    return load_stocks_cash(SP500_DATA, FED_FUNDS_DATA)
 
 
 def _load_uploaded(file) -> pd.DataFrame:

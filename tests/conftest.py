@@ -25,3 +25,22 @@ def two_asset_prices(flat_dates: pd.DatetimeIndex) -> pd.DataFrame:
         },
         index=flat_dates,
     )
+
+
+@pytest.fixture
+def deploy_prices(flat_dates: pd.DatetimeIndex) -> pd.DataFrame:
+    """A hand-checkable stocks + cash panel for the cash-deploy engine.
+
+    Six business days. ``S&P 500`` sits at its opening high, gaps down 25% (in
+    one step, so a two-tranche rule with thresholds at 10% and 20% fires both
+    tranches at once), holds, then recovers to the old high and makes a new one.
+    ``Cash (Fed Funds)`` is a flat index (per-step growth factor 1.0), so the
+    reserve earns no interest and the arithmetic stays exact.
+    """
+    return pd.DataFrame(
+        {
+            "S&P 500": [100.0, 100.0, 75.0, 75.0, 100.0, 125.0],
+            "Cash (Fed Funds)": [100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
+        },
+        index=flat_dates,
+    )
