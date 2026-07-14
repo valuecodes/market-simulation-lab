@@ -63,14 +63,6 @@ def _metrics_row(label: str, m: dict[str, float], sharpe: float) -> dict[str, st
     }
 
 
-def _sharpe_vs_cash(equity: pd.Series, cash_level: pd.Series, periods_per_year: int) -> float:
-    # Risk-free = the money-market leg's own periodic return, aligned to the
-    # equity curve's return dates inside sharpe_ratio.
-    returns = metrics.periodic_returns(equity)
-    risk_free = cash_level.pct_change()
-    return metrics.sharpe_ratio(returns, periods_per_year, risk_free)
-
-
 def _sidebar_rule() -> DeployRule | None:
     """Collect a deploy rule from the sidebar (a preset or a custom one)."""
     choice = st.sidebar.selectbox("Deploy rule", [*PRESET_RULES, CUSTOM_RULE], index=3)
@@ -279,7 +271,7 @@ def main() -> None:
         _metrics_row(
             config.name,
             result.metrics(),
-            _sharpe_vs_cash(result.equity, cash_level, periods_per_year),
+            metrics.sharpe_vs_cash(result.equity, cash_level, periods_per_year),
         )
     ]
     for label, series in baselines.items():
@@ -287,7 +279,7 @@ def main() -> None:
             _metrics_row(
                 label,
                 metrics.summarize(series, periods_per_year),
-                _sharpe_vs_cash(series, cash_level, periods_per_year),
+                metrics.sharpe_vs_cash(series, cash_level, periods_per_year),
             )
         )
     st.dataframe(pd.DataFrame(rows).set_index("Strategy"), width="stretch")
