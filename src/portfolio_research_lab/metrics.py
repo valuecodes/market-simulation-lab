@@ -79,6 +79,21 @@ def sharpe_ratio(
     return float(excess.mean() * periods_per_year / vol)
 
 
+def sharpe_vs_cash(
+    equity: pd.Series,
+    cash_level: pd.Series,
+    periods_per_year: int = TRADING_DAYS_PER_YEAR,
+) -> float:
+    """Sharpe ratio of an equity curve using a money-market leg as the risk-free rate.
+
+    The risk-free rate is the ``cash_level`` index's own periodic return, aligned
+    to the equity curve's return dates inside :func:`sharpe_ratio`.
+    """
+    returns = periodic_returns(equity)
+    risk_free = cash_level.pct_change()
+    return sharpe_ratio(returns, periods_per_year, risk_free)
+
+
 def drawdown_series(equity: pd.Series) -> pd.Series:
     """Drawdown at each point: ``value / running_peak - 1`` (values <= 0)."""
     running_peak = equity.cummax()

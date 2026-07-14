@@ -103,3 +103,19 @@ def test_sharpe_subtracts_risk_free_series():
     # A risk-free series equal to the returns leaves zero excess => Sharpe 0.
     rf = pd.Series([0.02, 0.02, 0.02, 0.02], index=pd.RangeIndex(4))
     assert metrics.sharpe_ratio(returns, risk_free=rf) == 0.0
+
+
+def test_sharpe_vs_cash_matches_manual():
+    # Sharpe of the equity curve using the cash leg's own returns as risk-free;
+    # must equal calling sharpe_ratio with that risk-free series directly.
+    equity = _equity([100.0, 110.0, 105.0, 120.0])
+    cash = _equity([100.0, 100.5, 101.0, 101.5])
+    expected = metrics.sharpe_ratio(metrics.periodic_returns(equity), 252, cash.pct_change())
+    assert metrics.sharpe_vs_cash(equity, cash, 252) == pytest.approx(expected)
+
+
+def test_sharpe_vs_cash_zero_when_equity_tracks_cash():
+    # Equity growing exactly like the cash leg => zero excess => Sharpe 0.
+    equity = _equity([100.0, 101.0, 102.01, 103.0301])
+    cash = _equity([200.0, 202.0, 204.02, 206.0602])
+    assert metrics.sharpe_vs_cash(equity, cash, 252) == pytest.approx(0.0)
