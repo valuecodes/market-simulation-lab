@@ -29,9 +29,6 @@ from portfolio_research_lab.cash_deploy import CashDeployResult, run_cash_deploy
 from portfolio_research_lab.models import CashDeployConfig, DeployRule, StrategyConfig
 from portfolio_research_lab.simulator import run_simulation
 
-# Silence Optuna's per-trial INFO logging; the UI drives its own progress bar.
-optuna.logging.set_verbosity(optuna.logging.WARNING)
-
 # Sorted grid of candidate drawdown thresholds. Sampling a distinct subset makes
 # every candidate's thresholds strictly-increasing-in-(0, 1) *by construction* —
 # no repair loop, no rejected trials.
@@ -82,27 +79,28 @@ class ObjectiveContext:
     dd_penalty: float = 1.0
 
 
-Objective = Callable[[CashDeployResult], float]
+# An objective scores a run from its result and its already-computed metrics
+# (passed in so metrics() is not recomputed per trial).
+Objective = Callable[[CashDeployResult, dict[str, float]], float]
 
 
 def make_objective(kind: ObjectiveKind, ctx: ObjectiveContext) -> Objective:
     """Build the scoring function for ``kind``, closing over ``ctx``."""
 
-    def excess_cagr(result: CashDeployResult) -> float:
-        return result.metrics()["cagr"] - ctx.benchmark_cagr
+    def excess_cagr(result: CashDeployResult, m: dict[str, float]) -> float:
+        return m["cagr"] - ctx.benchmark_cagr
 
-    def excess_cagr_dd_capped(result: CashDeployResult) -> float:
-        m = result.metrics()
+    def excess_cagr_dd_capped(result: CashDeployResult, m: dict[str, float]) -> float:
         excess = m["cagr"] - ctx.benchmark_cagr
         # max_drawdown is <= 0; -max_drawdown is the positive drawdown magnitude.
         breach = max(0.0, -m["max_drawdown"] - ctx.dd_cap)
         return excess - ctx.dd_penalty * breach
 
-    def sharpe(result: CashDeployResult) -> float:
+    def sharpe(result: CashDeployResult, m: dict[str, float]) -> float:
         return metrics.sharpe_vs_cash(result.equity, ctx.cash_level, ctx.periods_per_year)
 
-    def cagr(result: CashDeployResult) -> float:
-        return result.metrics()["cagr"]
+    def cagr(result: CashDeployResult, m: dict[str, float]) -> float:
+        return m["cagr"]
 
     dispatch: dict[ObjectiveKind, Objective] = {
         ObjectiveKind.EXCESS_CAGR: excess_cagr,
@@ -262,11 +260,21 @@ def optimize(
     if len(prices) < 2:
         raise ValueError("need at least two price rows to optimize")
 
+    # Keep Optuna's per-trial INFO logging quiet; done here rather than at import
+    # so `import portfolio_research_lab` has no global logging side effect.
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
     cut = len(prices) if split >= 1.0 else round(len(prices) * split)
     cut = max(2, min(cut, len(prices)))
     train = prices.iloc[:cut]
     test = prices.iloc[cut:]
     has_test = len(test) >= 2
+    if split < 1.0 and not has_test:
+        # A split below 1.0 promises a holdout; refuse to silently drop it.
+        raise ValueError(
+            f"not enough rows ({len(prices)}) for a holdout at split={split}; "
+            "use more data or split=1.0"
+        )
 
     train_ctx = _build_context(train, base, dd_cap)
     objective = make_objective(objective_kind, train_ctx)
@@ -276,8 +284,9 @@ def optimize(
     def objective_fn(trial: optuna.Trial) -> float:
         config = suggest_config(trial, space, base)
         result = run_cash_deploy(train, config)
-        score = objective(result)
-        scored.append(ScoredConfig(config=config, score=score, metrics=result.metrics()))
+        m = result.metrics()
+        score = objective(result, m)
+        scored.append(ScoredConfig(config=config, score=score, metrics=m))
         return score
 
     def callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
