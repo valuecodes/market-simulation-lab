@@ -263,6 +263,7 @@ def main() -> None:
                 n_trials=n_trials,
                 seed=seed,
                 dd_cap=dd_cap,
+                on_trial=on_trial,
             )
         progress.progress(1.0)
         status.write(f"Done — evaluated {total_trials:,} configurations.")

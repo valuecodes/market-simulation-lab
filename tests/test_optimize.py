@@ -111,24 +111,26 @@ def test_excess_cagr_objective(recovery_prices: pd.DataFrame):
     ctx = _context(recovery_prices)
     cfg = _base().model_copy(update={"reserve_pct": 0.3})
     result = run_cash_deploy(recovery_prices, cfg)
-    score = make_objective(ObjectiveKind.EXCESS_CAGR, ctx)(result)
-    assert score == pytest.approx(result.metrics()["cagr"] - ctx.benchmark_cagr)
+    m = result.metrics()
+    score = make_objective(ObjectiveKind.EXCESS_CAGR, ctx)(result, m)
+    assert score == pytest.approx(m["cagr"] - ctx.benchmark_cagr)
 
 
 def test_dd_capped_penalizes_only_when_breached(recovery_prices: pd.DataFrame):
     cfg = _base().model_copy(update={"reserve_pct": 0.3})
     result = run_cash_deploy(recovery_prices, cfg)
-    max_dd_mag = -result.metrics()["max_drawdown"]  # positive magnitude
+    m = result.metrics()
+    max_dd_mag = -m["max_drawdown"]  # positive magnitude
 
     # Cap well above the actual drawdown => no penalty => equals plain excess CAGR.
     loose = _context(recovery_prices, dd_cap=max_dd_mag + 0.10)
-    plain = make_objective(ObjectiveKind.EXCESS_CAGR, loose)(result)
-    capped_loose = make_objective(ObjectiveKind.EXCESS_CAGR_DD_CAPPED, loose)(result)
+    plain = make_objective(ObjectiveKind.EXCESS_CAGR, loose)(result, m)
+    capped_loose = make_objective(ObjectiveKind.EXCESS_CAGR_DD_CAPPED, loose)(result, m)
     assert capped_loose == pytest.approx(plain)
 
     # Cap below the actual drawdown => penalty subtracts the breach.
     tight = _context(recovery_prices, dd_cap=max_dd_mag - 0.05)
-    capped_tight = make_objective(ObjectiveKind.EXCESS_CAGR_DD_CAPPED, tight)(result)
+    capped_tight = make_objective(ObjectiveKind.EXCESS_CAGR_DD_CAPPED, tight)(result, m)
     assert capped_tight == pytest.approx(plain - 1.0 * 0.05)
 
 
@@ -170,6 +172,15 @@ def test_optimize_full_window_has_no_holdout(recovery_prices: pd.DataFrame):
     assert result.test_window is None
     assert result.test_metrics is None
     assert result.test_index_metrics is None
+
+
+def test_optimize_split_below_one_requires_a_holdout():
+    # A split < 1.0 promises a train/test split; too little data must raise rather
+    # than silently drop the holdout.
+    idx = pd.bdate_range("2020-01-01", periods=3, name="date")
+    prices = pd.DataFrame({STOCK: [100.0, 101.0, 102.0], CASH: [100.0, 100.0, 100.0]}, index=idx)
+    with pytest.raises(ValueError, match="holdout"):
+        opt.optimize(prices, base=_base(), n_trials=3, seed=0, split=0.6)
 
 
 def test_optimize_beats_index_and_a_dominated_config(recovery_prices: pd.DataFrame):
