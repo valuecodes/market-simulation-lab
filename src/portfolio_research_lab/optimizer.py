@@ -281,8 +281,15 @@ def optimize(
         return score
 
     def callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
-        if on_trial is not None:
-            on_trial(trial.number + 1, n_trials, study.best_value)
+        if on_trial is None:
+            return
+        # study.best_value raises until at least one trial has completed (e.g. if
+        # early trials prune), so guard it — progress must never crash the search.
+        try:
+            best = study.best_value
+        except ValueError:
+            return
+        on_trial(trial.number + 1, n_trials, best)
 
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(direction="maximize", sampler=sampler)
