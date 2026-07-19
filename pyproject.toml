@@ -9,7 +9,7 @@ authors = [{ name = "Portfolio Research Lab" }]
 dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",
-    "streamlit>=1.36",
+    "streamlit>=1.59.2",
     "plotly>=5.22",
     "pydantic>=2.7",
     # pyarrow 25.0.0 segfaults during the pandas->Arrow conversion Streamlit
@@ -26,8 +26,8 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
-    "ruff>=0.5",
-    "ty>=0.0.1a1",
+    "ruff>=0.15.22",
+    "ty>=0.0.61",
     "poethepoet>=0.27",
 ]
 
