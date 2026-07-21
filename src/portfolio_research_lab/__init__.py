@@ -17,7 +17,12 @@ from portfolio_research_lab.data import (
     parse_price_csv,
     rate_to_index,
 )
-from portfolio_research_lab.models import CashDeployConfig, DeployRule, StrategyConfig
+from portfolio_research_lab.models import (
+    CashDeployConfig,
+    DeployRule,
+    StrategyConfig,
+    TimingConfig,
+)
 from portfolio_research_lab.optimizer import (
     ObjectiveKind,
     OptimizationResult,
@@ -28,6 +33,7 @@ from portfolio_research_lab.optimizer import (
 )
 from portfolio_research_lab.simulator import SimulationResult, run_simulation
 from portfolio_research_lab.strategies import BuyAndHold, Strategy
+from portfolio_research_lab.timing import TimingResult, run_ma_timing
 
 __all__ = [
     "BuyAndHold",
@@ -40,6 +46,8 @@ __all__ = [
     "SimulationResult",
     "Strategy",
     "StrategyConfig",
+    "TimingConfig",
+    "TimingResult",
     "WalkForwardResult",
     "infer_periods_per_year",
     "load_price_data",
@@ -48,6 +56,7 @@ __all__ = [
     "parse_price_csv",
     "rate_to_index",
     "run_cash_deploy",
+    "run_ma_timing",
     "run_simulation",
     "walk_forward",
 ]
