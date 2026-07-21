@@ -228,3 +228,147 @@ def test_walk_forward_rejects_too_many_folds():
     )
     with pytest.raises(ValueError, match="not enough data"):
         opt.walk_forward(prices, base=_base(), n_folds=5, n_trials=3)
+
+
+# --- optimal_reserve_over_time ------------------------------------------------
+
+
+def test_optimal_reserve_over_time_shape(recovery_prices: pd.DataFrame):
+    grid = (0.1, 0.2, 0.3, 0.4)
+    result = opt.optimal_reserve_over_time(
+        recovery_prices,
+        base=_base(),
+        rule=_base().rule,
+        refill_rate_per_year=0.25,
+        reserve_grid=grid,
+        n_points=5,
+        min_rows=50,
+    )
+    assert result.reserve_grid == grid  # already ascending, preserved
+    assert len(result.points) == 5
+    # Snapshots are strictly increasing in time (distinct expanding windows).
+    for earlier, later in pairwise(result.points):
+        assert earlier.as_of < later.as_of
+        assert earlier.n_rows < later.n_rows
+    for point in result.points:
+        assert point.optimal_reserve in grid
+        assert len(point.objective_by_reserve) == len(grid)
+        # The recorded winner is the argmax of the stored surface (lowest on ties).
+        best = max(point.objective_by_reserve)
+        winners = [grid[i] for i, s in enumerate(point.objective_by_reserve) if s == best]
+        assert point.optimal_reserve == min(winners)
+        assert point.best_objective == pytest.approx(best)
+
+
+def test_optimal_reserve_sorts_grid_and_breaks_ties_low(recovery_prices: pd.DataFrame):
+    # Pass an unsorted grid; it must come back ascending, and a tie must resolve to
+    # the lowest reserve. CAGR over a flat-cash series is identical for two reserves
+    # only if they behave identically, so instead assert the sort + argmax contract.
+    result = opt.optimal_reserve_over_time(
+        recovery_prices,
+        base=_base(),
+        rule=_base().rule,
+        refill_rate_per_year=0.25,
+        reserve_grid=(0.4, 0.1, 0.25),
+        n_points=3,
+        min_rows=50,
+    )
+    assert result.reserve_grid == (0.1, 0.25, 0.4)
+
+
+def test_optimal_reserve_is_deterministic(recovery_prices: pd.DataFrame):
+    def run() -> opt.ReserveSweepResult:
+        return opt.optimal_reserve_over_time(
+            recovery_prices,
+            base=_base(),
+            rule=_base().rule,
+            refill_rate_per_year=0.25,
+            reserve_grid=(0.1, 0.2, 0.3),
+            n_points=4,
+            min_rows=50,
+        )
+
+    a, b = run(), run()
+    assert [p.optimal_reserve for p in a.points] == [p.optimal_reserve for p in b.points]
+    assert [p.objective_by_reserve for p in a.points] == [p.objective_by_reserve for p in b.points]
+
+
+def test_optimal_reserve_matches_bruteforce(recovery_prices: pd.DataFrame):
+    grid = (0.05, 0.15, 0.30, 0.45, 0.60)
+    base = _base()
+    rule = base.rule
+    result = opt.optimal_reserve_over_time(
+        recovery_prices,
+        base=base,
+        rule=rule,
+        refill_rate_per_year=0.25,
+        reserve_grid=grid,
+        n_points=3,
+        min_rows=50,
+    )
+    # Recompute the final snapshot's whole objective surface independently.
+    last = result.points[-1]
+    window = recovery_prices.iloc[: last.n_rows]
+    ctx = _context(window)
+    objective = make_objective(ObjectiveKind.EXCESS_CAGR, ctx)
+    expected = []
+    for reserve in grid:
+        cfg = base.model_copy(
+            update={"reserve_pct": reserve, "refill_rate_per_year": 0.25, "rule": rule}
+        )
+        res = run_cash_deploy(window, cfg)
+        expected.append(objective(res, res.metrics()))
+    assert list(last.objective_by_reserve) == pytest.approx(expected)
+    assert last.optimal_reserve == grid[expected.index(max(expected))]
+
+
+def test_optimal_reserve_no_lookahead(recovery_prices: pd.DataFrame):
+    # A snapshot fixed by calendar date must not change when future rows are added:
+    # windowing is prices.loc[:T], so rows after T are irrelevant.
+    as_of = recovery_prices.index[199]
+    full = opt.optimal_reserve_over_time(
+        recovery_prices,
+        base=_base(),
+        rule=_base().rule,
+        refill_rate_per_year=0.25,
+        reserve_grid=(0.1, 0.3, 0.5),
+        as_of_dates=[as_of],
+    )
+    truncated = opt.optimal_reserve_over_time(
+        recovery_prices.iloc[:230],
+        base=_base(),
+        rule=_base().rule,
+        refill_rate_per_year=0.25,
+        reserve_grid=(0.1, 0.3, 0.5),
+        as_of_dates=[as_of],
+    )
+    a, b = full.points[0], truncated.points[0]
+    assert a.as_of == b.as_of == as_of
+    assert a.n_rows == b.n_rows == 200
+    assert a.optimal_reserve == b.optimal_reserve
+    assert a.objective_by_reserve == b.objective_by_reserve
+
+
+def test_optimal_reserve_rejects_insufficient_data(recovery_prices: pd.DataFrame):
+    with pytest.raises(ValueError, match="more than min_rows"):
+        opt.optimal_reserve_over_time(
+            recovery_prices.iloc[:100],
+            base=_base(),
+            rule=_base().rule,
+            refill_rate_per_year=0.25,
+            n_points=5,
+            min_rows=100,
+        )
+
+
+def test_optimal_reserve_rejects_bad_grid(recovery_prices: pd.DataFrame):
+    with pytest.raises(ValueError, match="within"):
+        opt.optimal_reserve_over_time(
+            recovery_prices,
+            base=_base(),
+            rule=_base().rule,
+            refill_rate_per_year=0.25,
+            reserve_grid=(0.1, 1.5),
+            n_points=3,
+            min_rows=50,
+        )

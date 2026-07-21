@@ -21,8 +21,11 @@ from portfolio_research_lab.models import CashDeployConfig, DeployRule, Strategy
 from portfolio_research_lab.optimizer import (
     ObjectiveKind,
     OptimizationResult,
+    ReserveSweepPoint,
+    ReserveSweepResult,
     SearchSpace,
     WalkForwardResult,
+    optimal_reserve_over_time,
     optimize,
     walk_forward,
 )
@@ -36,6 +39,8 @@ __all__ = [
     "DeployRule",
     "ObjectiveKind",
     "OptimizationResult",
+    "ReserveSweepPoint",
+    "ReserveSweepResult",
     "SearchSpace",
     "SimulationResult",
     "Strategy",
@@ -44,6 +49,7 @@ __all__ = [
     "infer_periods_per_year",
     "load_price_data",
     "load_rate_series",
+    "optimal_reserve_over_time",
     "optimize",
     "parse_price_csv",
     "rate_to_index",
