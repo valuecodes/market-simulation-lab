@@ -17,7 +17,8 @@ so the optimizer runs from notebooks, scripts and tests.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -432,3 +433,203 @@ def walk_forward(
 
     mean_test_excess = sum(f.test_excess_cagr for f in folds) / len(folds)
     return WalkForwardResult(folds=folds, mean_test_excess_cagr=mean_test_excess, final=final)
+
+
+# --- Point-in-time reserve sweep ---------------------------------------------
+#
+# A cheaper, deterministic complement to the Optuna search: instead of one static
+# config fitted over the whole window, ask "at each point in history, what cash
+# reserve would have looked best on the past so far?". The deploy rule and refill
+# rate are held fixed and only ``reserve_pct`` is swept, over expanding windows.
+# There is no sampler, so results are exact and reproducible without a seed.
+
+
+@dataclass(frozen=True, slots=True)
+class ReserveSweepPoint:
+    """Optimal cash reserve at one expanding-window snapshot.
+
+    ``as_of`` is the last date of the window this snapshot was fitted on; the fit
+    used only rows up to and including it, so there is no look-ahead.
+    ``objective_by_reserve`` is aligned element-for-element with the sweep's
+    ``reserve_grid``, and is the full objective surface behind ``optimal_reserve``.
+    """
+
+    as_of: pd.Timestamp
+    n_rows: int
+    optimal_reserve: float
+    best_objective: float
+    excess_cagr: float
+    objective_by_reserve: tuple[float, ...]
+
+
+@dataclass(slots=True)
+class ReserveSweepResult:
+    """Point-in-time optimal cash reserve over an expanding window.
+
+    Each :class:`ReserveSweepPoint` fixes the deploy ``rule`` and
+    ``refill_rate_per_year`` and sweeps ``reserve_grid`` on the data available up
+    to its ``as_of`` date, recording the reserve that maximized ``objective_kind``.
+    This is an *in-sample* fit at each date — honest about look-ahead (only past
+    rows are used) but **not** out-of-sample validated; use :func:`walk_forward`
+    for the latter.
+    """
+
+    reserve_grid: tuple[float, ...]
+    points: list[ReserveSweepPoint]
+    rule: DeployRule
+    refill_rate_per_year: float
+    objective_kind: ObjectiveKind
+
+
+def default_reserve_grid(steps: int = 21) -> tuple[float, ...]:
+    """An evenly spaced reserve grid over :class:`SearchSpace`'s reserve range."""
+    lo, hi = SearchSpace().reserve_range
+    if steps < 2:
+        return (lo,)
+    return tuple(lo + (hi - lo) * i / (steps - 1) for i in range(steps))
+
+
+def _argmax_finite(scores: Sequence[float]) -> int | None:
+    """Index of the maximum finite score; the *lowest* index wins ties.
+
+    Returns ``None`` when no score is finite. With an ascending reserve grid this
+    means the smallest reserve wins on a tie — a deliberate, stable choice.
+    """
+    best_idx: int | None = None
+    best = float("-inf")
+    for i, score in enumerate(scores):
+        if math.isfinite(score) and score > best:
+            best = score
+            best_idx = i
+    return best_idx
+
+
+def _snapshot_cuts(n: int, n_points: int, min_rows: int) -> list[int]:
+    """Row-count cutoffs for the default expanding-window anchors.
+
+    Returns ``n_points`` strictly increasing cut lengths in ``[min_rows, n]``; the
+    window for a cut is ``prices.iloc[:cut]``. Raises if that many distinct integer
+    cuts cannot be produced (``n_points`` too large for the data and warm-up).
+    """
+    if n_points == 1:
+        return [n]
+    span = n - min_rows
+    cuts = [min_rows + round(span * i / (n_points - 1)) for i in range(n_points)]
+    if len(set(cuts)) != n_points:
+        raise ValueError(
+            f"n_points={n_points} is too large for {n} rows with min_rows={min_rows}; "
+            "reduce the number of points or the warm-up"
+        )
+    return cuts
+
+
+def optimal_reserve_over_time(
+    prices: pd.DataFrame,
+    *,
+    base: CashDeployConfig,
+    rule: DeployRule,
+    refill_rate_per_year: float,
+    objective_kind: ObjectiveKind = ObjectiveKind.EXCESS_CAGR,
+    reserve_grid: Sequence[float] | None = None,
+    as_of_dates: Sequence[pd.Timestamp] | None = None,
+    n_points: int = 24,
+    min_rows: int = 252,
+    dd_cap: float = 0.35,
+    on_progress: ProgressCallback | None = None,
+) -> ReserveSweepResult:
+    """Sweep the cash reserve at each expanding-window snapshot, holding the rest fixed.
+
+    At each snapshot date ``T`` the deploy ``rule`` and ``refill_rate_per_year``
+    are held fixed and only ``reserve_pct`` is varied across ``reserve_grid``; the
+    reserve maximizing ``objective_kind`` on the rows up to ``T`` is recorded. On
+    ties the *lowest* reserve wins (the grid is sorted ascending). Every backtest
+    runs on data ``<= T`` only, so there is no look-ahead — though it remains an
+    in-sample fit at each date.
+
+    Snapshots come from ``as_of_dates`` when given (each windowed as
+    ``prices.loc[:T]``), which makes them stable as new data arrives; otherwise
+    ``n_points`` expanding windows are anchored by row count from ``min_rows`` to
+    the full length. ``on_progress(done, total, snapshot_best)`` reports progress,
+    where ``snapshot_best`` is the best objective seen so far *within the snapshot
+    currently being swept* (a global best across windows of different lengths and
+    benchmarks would not be comparable).
+    """
+    if min_rows < 2:
+        raise ValueError("min_rows must be at least 2")
+    if not math.isfinite(refill_rate_per_year) or refill_rate_per_year < 0:
+        raise ValueError("refill_rate_per_year must be a finite, non-negative number")
+    if not math.isfinite(dd_cap):
+        raise ValueError("dd_cap must be finite")
+
+    grid_values = default_reserve_grid() if reserve_grid is None else tuple(reserve_grid)
+    if not grid_values:
+        raise ValueError("reserve_grid must be non-empty")
+    if any(not math.isfinite(r) or not 0.0 <= r <= 1.0 for r in grid_values):
+        raise ValueError("every reserve in reserve_grid must be finite and within [0, 1]")
+    if len(set(grid_values)) != len(grid_values):
+        raise ValueError("reserve_grid must not contain duplicate values")
+    # Sort ascending so the lowest-index tie-break is the lowest-reserve tie-break.
+    grid = tuple(sorted(grid_values))
+
+    n = len(prices)
+    if as_of_dates is None:
+        if n_points < 1:
+            raise ValueError("n_points must be at least 1")
+        if n <= min_rows:
+            raise ValueError(f"need more than min_rows={min_rows} rows to sweep, got {n}")
+        windows = [prices.iloc[:cut] for cut in _snapshot_cuts(n, n_points, min_rows)]
+    else:
+        windows = [prices.loc[:t] for t in as_of_dates]
+        for as_of, window in zip(as_of_dates, windows, strict=True):
+            if len(window) < 2:
+                raise ValueError(f"snapshot {as_of} has fewer than two rows of history")
+
+    total = len(windows) * len(grid)
+    done = 0
+    points: list[ReserveSweepPoint] = []
+    for window in windows:
+        ctx = _build_context(window, base, dd_cap)
+        objective = make_objective(objective_kind, ctx)
+        scores: list[float] = []
+        metrics_by_reserve: list[dict[str, float]] = []
+        snapshot_best = float("-inf")
+        for reserve in grid:
+            config = base.model_copy(
+                update={
+                    "reserve_pct": reserve,
+                    "refill_rate_per_year": refill_rate_per_year,
+                    "rule": rule,
+                }
+            )
+            result = run_cash_deploy(window, config)
+            m = result.metrics()
+            score = objective(result, m)
+            scores.append(score)
+            metrics_by_reserve.append(m)
+            if math.isfinite(score) and score > snapshot_best:
+                snapshot_best = score
+            done += 1
+            if on_progress is not None:
+                on_progress(done, total, snapshot_best)
+
+        best_idx = _argmax_finite(scores)
+        if best_idx is None:
+            raise RuntimeError(f"no finite objective at snapshot ending {window.index[-1]}")
+        points.append(
+            ReserveSweepPoint(
+                as_of=window.index[-1],
+                n_rows=len(window),
+                optimal_reserve=grid[best_idx],
+                best_objective=scores[best_idx],
+                excess_cagr=metrics_by_reserve[best_idx]["cagr"] - ctx.benchmark_cagr,
+                objective_by_reserve=tuple(scores),
+            )
+        )
+
+    return ReserveSweepResult(
+        reserve_grid=grid,
+        points=points,
+        rule=rule,
+        refill_rate_per_year=refill_rate_per_year,
+        objective_kind=objective_kind,
+    )
