@@ -26,6 +26,12 @@ The initial release is a small but working foundation:
   (validated with Pydantic).
 - Run a **buy-and-hold** or **periodically rebalanced** (monthly / quarterly /
   annually) simulation with transparent accounting.
+- Backtest a tactical **cash-deployment** strategy (deploy a reserve into stocks
+  as the market falls, refill at new highs) and search its parameters with a
+  walk-forward **optimizer**.
+- Backtest a **trend-timing** strategy — hold stocks above a moving average
+  (simple or exponential), step aside to cash below it — with a hysteresis band,
+  optional per-switch transaction cost, and a one-bar signal lag (no look-ahead).
 - Calculate **portfolio value, total return, CAGR, annualised volatility and
   maximum drawdown**.
 - Display an interactive **equity curve** and **drawdown** chart (Plotly).
@@ -143,14 +149,21 @@ request (see `.github/workflows/ci.yml`).
 ```
 market-simulation-lab/
 ├── app/
-│   └── Home.py                    # Streamlit UI (presentation layer only)
+│   ├── Home.py                    # fixed-weight backtest UI
+│   └── pages/
+│       ├── 1_Cash_Deploy.py       # tactical cash-deploy UI
+│       ├── 2_Optimize.py          # walk-forward optimizer UI
+│       └── 3_Trend_Timing.py      # moving-average trend-timing UI
 ├── src/
 │   └── portfolio_research_lab/
 │       ├── __init__.py            # public API
 │       ├── models.py              # Pydantic configuration models
 │       ├── data.py                # CSV / rate loading + cleaning
 │       ├── strategies.py          # strategy definitions (buy-and-hold)
-│       ├── simulator.py           # portfolio accounting / engine
+│       ├── simulator.py           # fixed-weight portfolio engine
+│       ├── cash_deploy.py         # tactical cash-deployment engine
+│       ├── timing.py              # moving-average trend-timing engine
+│       ├── optimizer.py           # Optuna walk-forward parameter search
 │       └── metrics.py             # returns, CAGR, volatility, drawdown
 ├── tests/                         # pytest unit tests
 ├── data/                          # local price CSVs (git-ignored)
@@ -163,8 +176,9 @@ market-simulation-lab/
 
 To keep the foundation small and understandable, this project deliberately
 avoids databases, authentication, cloud services, machine learning and
-premature optimization. Transaction costs, taxes and leverage are **not**
-modelled yet — the strategy interface leaves room to add them later.
+premature optimization. Taxes and leverage are **not** modelled; transaction
+costs are modelled only where a strategy trades on a signal (the trend-timing
+per-switch cost) — the other engines assume frictionless rebalancing.
 
 ## License
 

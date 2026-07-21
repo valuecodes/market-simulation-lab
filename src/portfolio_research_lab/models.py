@@ -21,6 +21,9 @@ WEIGHT_TOLERANCE = 1e-6
 # (weights are set once and left to drift).
 REBALANCE_FREQUENCIES = frozenset({"monthly", "quarterly", "annually"})
 
+# Moving-average kinds the trend-timing engine understands.
+MA_KINDS = frozenset({"simple", "exponential"})
+
 
 class StrategyConfig(BaseModel):
     """Reusable description of a portfolio strategy.
@@ -225,6 +228,68 @@ class CashDeployConfig(BaseModel):
 
     @model_validator(mode="after")
     def _symbols_must_differ(self) -> CashDeployConfig:
+        if self.stock_symbol == self.cash_symbol:
+            raise ValueError("stock_symbol and cash_symbol must be different")
+        return self
+
+
+class TimingConfig(BaseModel):
+    """Configuration for a moving-average trend-timing backtest.
+
+    Hold 100% stocks while the stock price is above its ``ma_window`` moving
+    average, and 100% cash (a money-market account) when it falls below. The
+    signal is evaluated on the previous close and acted on the next day (the
+    engine lags it one bar to avoid look-ahead).
+
+    Attributes
+    ----------
+    name:
+        Human-readable label shown in the UI and charts.
+    initial_capital:
+        Starting capital, in the currency of the price data.
+    ma_window:
+        Moving-average lookback in trading days (e.g. ``200``). Must be > 1.
+    ma_kind:
+        ``"simple"`` (equal-weighted rolling mean) or ``"exponential"`` (EWM with
+        ``span = ma_window``). Both stay fully invested until the average is
+        defined (the first ``ma_window - 1`` steps).
+    band_pct:
+        Hysteresis buffer as a positive fraction in ``[0, 1)``. Exit to cash only
+        when ``price < ma * (1 - band_pct)`` and re-enter only when
+        ``price > ma * (1 + band_pct)``; inside the band the position is retained,
+        which damps whipsaws around the crossover.
+    cost_bps:
+        Transaction cost charged on each switch, in basis points of the traded
+        notional (``10`` = 0.10%). Bounded below 10,000 bps so a switch can never
+        wipe out or invert a leg. Defaults to 0 for parity with the other engines.
+    trading_days_per_year:
+        Periods used to annualise metrics (252 for daily data).
+    stock_symbol / cash_symbol:
+        Column names of the stock and cash legs in the price frame.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(default="Trend Timing", min_length=1)
+    initial_capital: float = Field(default=10_000.0, gt=0, allow_inf_nan=False)
+    ma_window: int = Field(default=200, gt=1)
+    ma_kind: str = Field(default="simple")
+    band_pct: float = Field(default=0.0, ge=0.0, lt=1.0, allow_inf_nan=False)
+    cost_bps: float = Field(default=0.0, ge=0.0, lt=10_000.0, allow_inf_nan=False)
+    trading_days_per_year: int = Field(default=252, gt=0)
+    stock_symbol: str = Field(default="S&P 500", min_length=1)
+    cash_symbol: str = Field(default="Cash (Fed Funds)", min_length=1)
+
+    @field_validator("ma_kind")
+    @classmethod
+    def _known_ma_kind(cls, value: str) -> str:
+        if value not in MA_KINDS:
+            allowed = ", ".join(sorted(MA_KINDS))
+            raise ValueError(f"ma_kind must be one of {{{allowed}}}, got {value!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _symbols_must_differ(self) -> TimingConfig:
         if self.stock_symbol == self.cash_symbol:
             raise ValueError("stock_symbol and cash_symbol must be different")
         return self
