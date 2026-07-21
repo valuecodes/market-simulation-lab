@@ -575,10 +575,16 @@ def optimal_reserve_over_time(
     if as_of_dates is None:
         if n_points < 1:
             raise ValueError("n_points must be at least 1")
-        if n <= min_rows:
+        if n < 2:
+            raise ValueError(f"need at least two rows to sweep, got {n}")
+        # Several distinct snapshots need history beyond the warm-up; a single
+        # snapshot is just the full-history fit, so min_rows does not gate it.
+        if n_points > 1 and n <= min_rows:
             raise ValueError(f"need more than min_rows={min_rows} rows to sweep, got {n}")
         windows = [prices.iloc[:cut] for cut in _snapshot_cuts(n, n_points, min_rows)]
     else:
+        if len(as_of_dates) == 0:
+            raise ValueError("as_of_dates must be non-empty")
         windows = [prices.loc[:t] for t in as_of_dates]
         for as_of, window in zip(as_of_dates, windows, strict=True):
             if len(window) < 2:

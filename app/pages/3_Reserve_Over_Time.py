@@ -110,7 +110,10 @@ def _reserve_line_chart(result: ReserveSweepResult, drawdown: pd.Series) -> go.F
 def _objective_heatmap(result: ReserveSweepResult) -> go.Figure:
     """The full objective surface: reserve (y) by snapshot date (x), coloured by objective."""
     dates = [p.as_of for p in result.points]
-    reserves = [f"{r:.0%}" for r in result.reserve_grid]
+    # Numeric reserves for the y-axis (formatted via tickformat): using rounded
+    # percent strings would collapse distinct grid values into one row at higher
+    # reserve resolutions.
+    reserves = list(result.reserve_grid)
     # z[i][j] = objective at reserve i, snapshot j (columns aligned with dates).
     z = [
         [p.objective_by_reserve[i] for p in result.points] for i in range(len(result.reserve_grid))
@@ -127,7 +130,7 @@ def _objective_heatmap(result: ReserveSweepResult) -> go.Figure:
     fig.add_trace(
         go.Scatter(
             x=dates,
-            y=[f"{p.optimal_reserve:.0%}" for p in result.points],
+            y=[p.optimal_reserve for p in result.points],
             name="Optimal",
             mode="lines+markers",
             line={"color": "white", "width": 2},
@@ -137,7 +140,7 @@ def _objective_heatmap(result: ReserveSweepResult) -> go.Figure:
     fig.update_layout(
         margin={"t": 20, "b": 20},
         xaxis_title="Snapshot date",
-        yaxis_title="Cash reserve",
+        yaxis={"title": "Cash reserve", "tickformat": ".0%"},
         legend={"orientation": "h", "y": 1.1},
     )
     return fig

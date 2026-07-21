@@ -361,6 +361,35 @@ def test_optimal_reserve_rejects_insufficient_data(recovery_prices: pd.DataFrame
         )
 
 
+def test_optimal_reserve_rejects_empty_as_of_dates(recovery_prices: pd.DataFrame):
+    # An empty date sequence would otherwise yield a point-less result, deferring
+    # the failure to consumers that read points[-1].
+    with pytest.raises(ValueError, match="non-empty"):
+        opt.optimal_reserve_over_time(
+            recovery_prices,
+            base=_base(),
+            rule=_base().rule,
+            refill_rate_per_year=0.25,
+            as_of_dates=[],
+        )
+
+
+def test_optimal_reserve_single_snapshot_ignores_warmup(recovery_prices: pd.DataFrame):
+    # A single snapshot is the full-history fit; min_rows must not gate it even
+    # when it equals the row count.
+    result = opt.optimal_reserve_over_time(
+        recovery_prices,
+        base=_base(),
+        rule=_base().rule,
+        refill_rate_per_year=0.25,
+        reserve_grid=(0.1, 0.3),
+        n_points=1,
+        min_rows=len(recovery_prices),
+    )
+    assert len(result.points) == 1
+    assert result.points[0].n_rows == len(recovery_prices)
+
+
 def test_optimal_reserve_rejects_bad_grid(recovery_prices: pd.DataFrame):
     with pytest.raises(ValueError, match="within"):
         opt.optimal_reserve_over_time(
