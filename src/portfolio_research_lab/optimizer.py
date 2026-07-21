@@ -21,6 +21,7 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+from itertools import pairwise
 
 import optuna
 import pandas as pd
@@ -558,8 +559,8 @@ def optimal_reserve_over_time(
         raise ValueError("min_rows must be at least 2")
     if not math.isfinite(refill_rate_per_year) or refill_rate_per_year < 0:
         raise ValueError("refill_rate_per_year must be a finite, non-negative number")
-    if not math.isfinite(dd_cap):
-        raise ValueError("dd_cap must be finite")
+    if not math.isfinite(dd_cap) or not 0.0 <= dd_cap <= 1.0:
+        raise ValueError("dd_cap must be a fraction within [0, 1]")
 
     grid_values = default_reserve_grid() if reserve_grid is None else tuple(reserve_grid)
     if not grid_values:
@@ -585,6 +586,8 @@ def optimal_reserve_over_time(
     else:
         if len(as_of_dates) == 0:
             raise ValueError("as_of_dates must be non-empty")
+        if any(b <= a for a, b in pairwise(as_of_dates)):
+            raise ValueError("as_of_dates must be strictly increasing")
         windows = [prices.loc[:t] for t in as_of_dates]
         for as_of, window in zip(as_of_dates, windows, strict=True):
             if len(window) < 2:
