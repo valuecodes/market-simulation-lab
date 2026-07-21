@@ -213,6 +213,8 @@ def main() -> None:
     )
     min_rows = warmup_years * base.trading_days_per_year
 
+    # `.map` rather than the vectorized `.index.year`: ty types `.index` as the
+    # generic Index, which has no `.year`; this mirrors 2_Optimize.py.
     years = prices.index.map(lambda ts: ts.year)
     start_year = st.sidebar.slider(
         "Start year", int(years.min()), int(years.max()), int(years.min())

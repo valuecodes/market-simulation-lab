@@ -401,3 +401,28 @@ def test_optimal_reserve_rejects_bad_grid(recovery_prices: pd.DataFrame):
             n_points=3,
             min_rows=50,
         )
+
+
+def test_optimal_reserve_rejects_bad_dd_cap(recovery_prices: pd.DataFrame):
+    with pytest.raises(ValueError, match="dd_cap"):
+        opt.optimal_reserve_over_time(
+            recovery_prices,
+            base=_base(),
+            rule=_base().rule,
+            refill_rate_per_year=0.25,
+            n_points=3,
+            min_rows=50,
+            dd_cap=1.5,
+        )
+
+
+def test_optimal_reserve_rejects_unsorted_as_of_dates(recovery_prices: pd.DataFrame):
+    dates = [recovery_prices.index[200], recovery_prices.index[100]]
+    with pytest.raises(ValueError, match="strictly increasing"):
+        opt.optimal_reserve_over_time(
+            recovery_prices,
+            base=_base(),
+            rule=_base().rule,
+            refill_rate_per_year=0.25,
+            as_of_dates=dates,
+        )
