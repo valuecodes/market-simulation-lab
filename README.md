@@ -1,96 +1,50 @@
 # Portfolio Research Lab
 
-A **local-first** Python application for testing investment and portfolio
-strategies through historical backtesting and simulation. It runs entirely on
-your machine — no database, no accounts, no cloud services.
+A local-first tool for backtesting investing strategies on historical price
+data. Built with Python and Streamlit; runs entirely on your machine, with no
+accounts, database or cloud services.
 
-The project separates a reusable **simulation engine**
-(`src/portfolio_research_lab/`) from the **Streamlit interface** (`app/`). The
-engine never imports Streamlit, so you can drive it from notebooks, scripts or
-tests just as easily as from the UI.
-
-> ⚠️ **Disclaimer**
-> This application is provided for **research and educational purposes only**.
-> It uses simplified models, and it is **not financial advice**. Nothing here is
-> a recommendation to buy or sell any security. Do your own research and consult
-> a qualified professional before investing.
+<p align="center">
+  <img src="docs/trend-timing.jpg" alt="Portfolio Research Lab" width="820">
+</p>
 
 ## Features
 
-The initial release is a small but working foundation:
+- **Allocation backtest.** Split capital across assets (for example S&P 500 and a
+  cash account earning the fed funds rate) and either hold or rebalance monthly,
+  quarterly or annually.
+- **Tactical cash deployment.** Hold a cash reserve, deploy it into stocks in
+  tranches as the market falls from its highs, and drip it back to target once
+  the market recovers. Compared against buy-and-hold and a static split.
+- **Trend timing.** Hold stocks above a moving average (simple or exponential)
+  and move to cash below it, with a hysteresis band, an optional per-switch
+  transaction cost, and a one-bar signal lag to avoid look-ahead.
+- **Parameter optimization.** A Bayesian search (Optuna) over the cash-deploy
+  parameters, using walk-forward validation so the reported result is
+  out-of-sample rather than curve-fit.
+- **Metrics and charts.** Total return, CAGR, annualised volatility, max drawdown
+  and Sharpe, with interactive equity-curve and drawdown charts shown against a
+  benchmark.
 
-- Load historical asset prices from wide-format **CSV files**.
-- Test **multi-asset allocations** — e.g. stocks vs. a cash account built from
-  the **federal funds rate** (bundled `Stocks + Cash (1954+)` dataset).
-- Configure an **initial portfolio allocation** and reusable strategy parameters
-  (validated with Pydantic).
-- Run a **buy-and-hold** or **periodically rebalanced** (monthly / quarterly /
-  annually) simulation with transparent accounting.
-- Backtest a tactical **cash-deployment** strategy (deploy a reserve into stocks
-  as the market falls, refill at new highs) and search its parameters with a
-  walk-forward **optimizer**.
-- Backtest a **trend-timing** strategy — hold stocks above a moving average
-  (simple or exponential), step aside to cash below it — with a hysteresis band,
-  optional per-switch transaction cost, and a one-bar signal lag (no look-ahead).
-- Calculate **portfolio value, total return, CAGR, annualised volatility and
-  maximum drawdown**.
-- Display an interactive **equity curve** and **drawdown** chart (Plotly).
-- **Compare** the simulated strategy against a chosen benchmark asset.
-- **Unit tests** for returns, drawdown, rate conversion and portfolio accounting.
-
-## Requirements
-
-- Python **3.12+**
-- [uv](https://docs.astral.sh/uv/) for dependency management
-
-## Installation
+## Quickstart
 
 ```bash
-# Clone, then from the project root:
-uv sync --extra dev
+uv sync --extra dev   # creates .venv/ and installs dependencies
+uv run poe dev        # run the Streamlit app
 ```
 
-`uv sync` creates a virtual environment in `.venv/` and installs the runtime and
-development dependencies pinned in `pyproject.toml`.
+The app opens on the allocation backtester; the **Cash Deploy**, **Optimizer**
+and **Trend Timing** pages are in the sidebar.
 
-## Running the app
+A fresh clone ships with no market data (see below), but the **Upload CSV**
+option works without any local files.
 
-```bash
-uv run poe dev   # or: uv run streamlit run app/Home.py
-```
+## Bring your own data
 
-Streamlit opens the interface in your browser. Pick a data source in the
-sidebar — the bundled **Stocks + Cash (1954+)** dataset (S&P 500 alongside a
-cash account that compounds the federal funds rate, from `data/`), the
-full-history **S&P 500 (daily)** series, or your own uploaded wide-format CSV —
-then set the allocation weights, choose a rebalancing cadence, and run a
-simulation.
+<details>
+<summary>CSV format</summary>
 
-> **Data files are not committed.** The `data/` directory is git-ignored, so a
-> fresh clone has no bundled datasets: the **Stocks + Cash** and **S&P 500**
-> options will report a missing file until you place the CSVs in `data/`
-> (`sp500daily.csv` and `fed-funds-rate.csv`). The **Upload CSV** option works
-> without any local data. Uploads are validated and size-bounded (10 MiB /
-> 200k rows / 100 columns) before processing.
-
-> **Note on "Cash (Fed Funds)":** the federal funds rate is a short-term
-> overnight rate. Compounding it models a risk-free cash / money-market account,
-> **not** long-term bonds — it has no duration or price risk.
-
-### Deploying to the public internet
-
-This tool is designed to run **locally**. Before exposing the Streamlit app to
-arbitrary internet users, harden the deployment:
-
-- Uploads are already validated and size-bounded in code, and `maxUploadSize`
-  is capped in `.streamlit/config.toml` — keep both in place.
-- Put the app behind authentication and/or a reverse proxy with rate limiting.
-- Set resource limits (CPU/memory) on the container or host.
-- Do not commit real market data you are not licensed to redistribute.
-
-## Using your own data
-
-Provide a CSV with a `date` column and one closing-price column per asset:
+A `date` column and one closing-price column per asset:
 
 ```csv
 date,STOCKS,BONDS,GOLD
@@ -98,7 +52,29 @@ date,STOCKS,BONDS,GOLD
 2019-01-03,100.8,100.1,99.4
 ```
 
+Uploads are validated and size-bounded (10 MiB / 200k rows / 100 columns) before
+anything is processed.
+</details>
+
+<details>
+<summary>The bundled datasets (and why they're not in the repo)</summary>
+
+The **Stocks + Cash (1954+)** and **S&P 500 (daily)** data sources are git-ignored,
+so a fresh clone won't have them. Drop `sp500daily.csv` and `fed-funds-rate.csv`
+into `data/` to enable them.
+
+A note on **"Cash (Fed Funds)"**: the federal funds rate is a short-term overnight
+rate. Compounding it models a risk-free cash / money-market account, *not*
+long-term bonds. There's no duration or price risk in it.
+</details>
+
 ## Using the engine directly
+
+<details>
+<summary>Drive it from a script or notebook</summary>
+
+The simulation engine (`src/portfolio_research_lab/`) never imports Streamlit, so
+you can use it anywhere:
 
 ```python
 from portfolio_research_lab import (
@@ -109,7 +85,6 @@ from portfolio_research_lab import (
     run_simulation,
 )
 
-# Stocks + a cash account that compounds the federal funds rate.
 stocks = load_price_data("data/sp500daily.csv").rename(columns={"close": "S&P 500"})
 cash = rate_to_index(load_rate_series("data/fed-funds-rate.csv")).rename("Cash (Fed Funds)")
 prices = stocks.join(cash, how="left").ffill().dropna(how="any")  # trims to 1954+
@@ -123,63 +98,74 @@ config = StrategyConfig(
 result = run_simulation(prices, config)
 print(result.metrics())
 ```
+</details>
 
-## Testing, linting and formatting
+## Development
 
-Common tasks are defined as [poe](https://poethepoet.natn.io/) tasks in
-`pyproject.toml`. Run `uv run poe` to list them:
+<details>
+<summary>Tasks, tests and project layout</summary>
+
+Common tasks are [poe](https://poethepoet.natn.io/) tasks; run `uv run poe` to
+list them.
 
 ```bash
-uv run poe test          # run the test suite
-uv run poe cov           # tests + coverage report
-uv run poe lint          # lint (ruff)
-uv run poe fmt           # format (ruff)
-uv run poe typecheck     # type-check (ty)
-uv run poe check         # lint + typecheck + test
+uv run poe test        # run the test suite
+uv run poe cov         # tests + coverage
+uv run poe lint        # lint (ruff)
+uv run poe fmt         # format (ruff)
+uv run poe typecheck   # type-check (ty)
+uv run poe check       # lint + typecheck + test
 ```
 
-These are thin wrappers — the equivalent raw commands still work
-(`uv run pytest`, `uv run ruff check .`, `uv run ruff format .`, `uv run ty check`).
+The same gates run in CI on every push and pull request.
+</details>
 
-The same `lint`/`typecheck`/`test` gates run in CI on every push and pull
-request (see `.github/workflows/ci.yml`).
+<details>
+<summary>Running it on the public internet</summary>
+
+This tool is built to run locally. Before exposing it to arbitrary users:
+
+- Keep the in-code upload limits and the `maxUploadSize` cap in `.streamlit/config.toml`.
+- Put it behind authentication and/or a reverse proxy with rate limiting.
+- Set CPU/memory limits on the container or host.
+- Don't commit market data you aren't licensed to redistribute.
+</details>
 
 ## Project structure
 
+The engine is a plain Python package with no Streamlit dependency; the app is a
+thin presentation layer on top of it.
+
 ```
-market-simulation-lab/
-├── app/
-│   ├── Home.py                    # fixed-weight backtest UI
-│   └── pages/
-│       ├── 1_Cash_Deploy.py       # tactical cash-deploy UI
-│       ├── 2_Optimize.py          # walk-forward optimizer UI
-│       └── 3_Trend_Timing.py      # moving-average trend-timing UI
-├── src/
-│   └── portfolio_research_lab/
-│       ├── __init__.py            # public API
-│       ├── models.py              # Pydantic configuration models
-│       ├── data.py                # CSV / rate loading + cleaning
-│       ├── strategies.py          # strategy definitions (buy-and-hold)
-│       ├── simulator.py           # fixed-weight portfolio engine
-│       ├── cash_deploy.py         # tactical cash-deployment engine
-│       ├── timing.py              # moving-average trend-timing engine
-│       ├── optimizer.py           # Optuna walk-forward parameter search
-│       └── metrics.py             # returns, CAGR, volatility, drawdown
-├── tests/                         # pytest unit tests
-├── data/                          # local price CSVs (git-ignored)
-├── pyproject.toml
-├── README.md
-└── .gitignore
+app/
+  Home.py                    # allocation backtester (UI only)
+  pages/
+    1_Cash_Deploy.py         # tactical cash-deployment page
+    2_Optimize.py            # Bayesian parameter search
+    3_Reserve_Over_Time.py   # how the best cash reserve drifts through history
+    3_Trend_Timing.py        # moving-average trend timing
+src/portfolio_research_lab/
+  models.py                  # Pydantic config models
+  data.py                    # CSV / rate loading + cleaning
+  strategies.py              # strategy definitions (buy-and-hold)
+  simulator.py               # fixed-weight portfolio engine
+  cash_deploy.py             # tactical cash-deployment engine
+  timing.py                  # moving-average trend-timing engine
+  optimizer.py               # Optuna search + walk-forward validation
+  metrics.py                 # returns, CAGR, volatility, drawdown
+tests/                       # pytest unit tests
 ```
 
-## Scope and non-goals
+## Scope
 
-To keep the foundation small and understandable, this project deliberately
-avoids databases, authentication, cloud services, machine learning and
-premature optimization. Taxes and leverage are **not** modelled; transaction
-costs are modelled only where a strategy trades on a signal (the trend-timing
-per-switch cost) — the other engines assume frictionless rebalancing.
+Kept deliberately small and readable: no databases, accounts, cloud or ML. Taxes
+and leverage aren't modelled, and transaction costs only where a strategy trades
+on a signal (the trend-timing per-switch cost). The other engines assume
+frictionless rebalancing.
 
-## License
+---
 
-MIT
+*For research and education only. This is not financial advice and not a
+recommendation to buy or sell anything. Do your own research.*
+
+License: MIT
