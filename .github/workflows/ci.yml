@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
       - uses: ./.github/actions/setup
-      - run: uv run poe fmt-check
+      - run: uv run poe format-check
 
   typecheck:
     name: typecheck

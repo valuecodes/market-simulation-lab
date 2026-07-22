@@ -119,7 +119,7 @@ list them.
 uv run poe test        # run the test suite
 uv run poe cov         # tests + coverage
 uv run poe lint        # lint (ruff)
-uv run poe fmt         # format (ruff)
+uv run poe format      # format (ruff)
 uv run poe typecheck   # type-check (ty)
 uv run poe check       # lint + typecheck + test
 ```

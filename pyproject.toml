@@ -47,8 +47,8 @@ setup = { sequence = ["_sync", "refresh-data"], help = "Install deps and fetch d
 refresh-data = { cmd = "python scripts/refresh_data.py", help = "Fetch latest S&P 500 + fed funds data into data/" }
 dev = { cmd = "streamlit run app/Home.py", help = "Run the Streamlit app" }
 lint = { cmd = "ruff check .", help = "Lint with ruff" }
-fmt = { cmd = "ruff format .", help = "Format with ruff" }
-fmt-check = { cmd = "ruff format --check .", help = "Check formatting (no changes)" }
+format = { cmd = "ruff format .", help = "Format with ruff" }
+format-check = { cmd = "ruff format --check .", help = "Check formatting (no changes)" }
 typecheck = { cmd = "ty check", help = "Type-check with ty" }
 test = { cmd = "pytest", help = "Run the test suite" }
 cov = { cmd = "pytest --cov --cov-report=term-missing", help = "Tests + coverage" }

@@ -15,7 +15,7 @@ uv run poe refresh-data  # re-fetch latest S&P 500 + fed funds data
 uv sync --extra dev   # install deps only (creates .venv/)
 uv run poe dev        # run the Streamlit app
 uv run poe lint       # ruff check .
-uv run poe fmt        # ruff format .
+uv run poe format     # ruff format .
 uv run poe typecheck  # ty check
 uv run poe test       # pytest
 uv run poe cov        # pytest + coverage report
