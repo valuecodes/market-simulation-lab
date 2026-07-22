@@ -29,15 +29,19 @@ accounts, database or cloud services.
 ## Quickstart
 
 ```bash
-uv sync --extra dev   # creates .venv/ and installs dependencies
+uv run poe setup      # install deps and fetch the bundled market data
 uv run poe dev        # run the Streamlit app
 ```
+
+`poe setup` runs `uv sync --extra dev` and then downloads the two data files the
+app ships with (see below). Re-run `uv run poe refresh-data` any time to pull the
+latest observations.
 
 The app opens on the allocation backtester; the **Cash Deploy**, **Optimizer**
 and **Trend Timing** pages are in the sidebar.
 
-A fresh clone ships with no market data (see below), but the **Upload CSV**
-option works without any local files.
+The **Upload CSV** option also works without any local files, if you'd rather
+bring your own data.
 
 ## Bring your own data
 
@@ -54,18 +58,20 @@ date,STOCKS,BONDS,GOLD
 
 Uploads are validated and size-bounded (10 MiB / 200k rows / 100 columns) before
 anything is processed.
+
 </details>
 
 <details>
 <summary>The bundled datasets (and why they're not in the repo)</summary>
 
 The **Stocks + Cash (1954+)** and **S&P 500 (daily)** data sources are git-ignored,
-so a fresh clone won't have them. Drop `sp500daily.csv` and `fed-funds-rate.csv`
-into `data/` to enable them.
+so a fresh clone won't have them. `uv run poe setup` (or `uv run poe refresh-data`)
+fetches `sp500daily.csv` and `fed-funds-rate.csv` into `data/`.
 
 A note on **"Cash (Fed Funds)"**: the federal funds rate is a short-term overnight
-rate. Compounding it models a risk-free cash / money-market account, *not*
+rate. Compounding it models a risk-free cash / money-market account, _not_
 long-term bonds. There's no duration or price risk in it.
+
 </details>
 
 ## Using the engine directly
@@ -98,6 +104,7 @@ config = StrategyConfig(
 result = run_simulation(prices, config)
 print(result.metrics())
 ```
+
 </details>
 
 ## Development
@@ -118,6 +125,7 @@ uv run poe check       # lint + typecheck + test
 ```
 
 The same gates run in CI on every push and pull request.
+
 </details>
 
 <details>
@@ -165,7 +173,7 @@ frictionless rebalancing.
 
 ---
 
-*For research and education only. This is not financial advice and not a
-recommendation to buy or sell anything. Do your own research.*
+_For research and education only. This is not financial advice and not a
+recommendation to buy or sell anything. Do your own research._
 
 License: MIT

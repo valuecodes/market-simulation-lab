@@ -42,6 +42,9 @@ packages = ["src/portfolio_research_lab"]
 # Development dependencies installed with `uv sync --extra dev`.
 
 [tool.poe.tasks]
+_sync = { cmd = "uv sync --extra dev", help = "Install dependencies" }
+setup = { sequence = ["_sync", "refresh-data"], help = "Install deps and fetch data (fresh-clone setup)" }
+refresh-data = { cmd = "python scripts/refresh_data.py", help = "Fetch latest S&P 500 + fed funds data into data/" }
 dev = { cmd = "streamlit run app/Home.py", help = "Run the Streamlit app" }
 lint = { cmd = "ruff check .", help = "Lint with ruff" }
 fmt = { cmd = "ruff format .", help = "Format with ruff" }

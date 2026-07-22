@@ -10,7 +10,9 @@ strategies.
 Tasks are defined as [poe](https://poethepoet.natn.io/) tasks in `pyproject.toml`.
 
 ```bash
-uv sync --extra dev   # install deps (creates .venv/)
+uv run poe setup      # install deps + fetch data/ (fresh-clone setup)
+uv run poe refresh-data  # re-fetch latest S&P 500 + fed funds data
+uv sync --extra dev   # install deps only (creates .venv/)
 uv run poe dev        # run the Streamlit app
 uv run poe lint       # ruff check .
 uv run poe fmt        # ruff format .
