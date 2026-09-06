@@ -17,7 +17,7 @@ dependencies = [
     # thread (single-threaded use is fine), so it crashes the whole server the
     # moment a page renders a table/chart. Cap below it until the regression is
     # fixed upstream. See https://github.com/apache/arrow (pyarrow 25.0.0).
-    "pyarrow>=14,<25",
+    "pyarrow>=14,<26",
     # Bayesian (TPE) hyperparameter search driving the strategy optimizer.
     "optuna>=3.6",
 ]
